@@ -5,6 +5,9 @@ use volatile::Volatile;
 mod macros;
 mod colour;
 
+#[cfg(test)]
+mod tests;
+
 use colour::{Colour, ColourCode};
 
 
@@ -113,10 +116,6 @@ lazy_static! {
         colour_code: ColourCode::new(Colour::White, Colour::Black),
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
     });
-}
-
-pub fn print_something() {
-    println!("The numbers are {}\n and {}", 42, 1.0/3.0);
 }
 
 #[doc(hidden)]

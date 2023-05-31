@@ -1,4 +1,3 @@
 {
-    // Stops error about not finding test crate
-    "rust-analyzer.check.allTargets": false,
+    "rust-analyzer.showUnlinkedFileNotification": false,
 }
