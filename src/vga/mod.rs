@@ -3,7 +3,7 @@ use volatile::Volatile;
 
 #[macro_use]
 mod macros;
-mod colour;
+pub mod colour;
 
 #[cfg(test)]
 mod tests;
@@ -113,6 +113,10 @@ lazy_static! {
         colour_code: ColourCode::new(Colour::White, Colour::Black),
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
     });
+}
+
+pub fn set_colours(colours: ColourCode) {
+    WRITER.lock().colour_code = colours;
 }
 
 #[doc(hidden)]
