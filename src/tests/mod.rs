@@ -1,6 +1,6 @@
-use core::{panic::PanicInfo};
+use core::panic::PanicInfo;
 
-use crate::serial_print;
+use crate::{init, serial_print};
 
 #[macro_use]
 mod serial;
@@ -12,7 +12,7 @@ pub enum QemuExitCode {
     Failed = 0x11,
 }
 
-pub fn exit_qemu(exit_code: QemuExitCode) -> !{
+pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
     use x86_64::instructions::port::Port;
 
     unsafe {
@@ -22,9 +22,9 @@ pub fn exit_qemu(exit_code: QemuExitCode) -> !{
 
     println!("Exit did not succeed, looping");
 
-    // This empty loop is the best option until proper power management is implemented
-    #[allow(clippy::empty_loop)]
-    loop {}
+    loop {
+        x86_64::instructions::hlt();
+    }
 }
 
 /// This function is called on panic in a test build.
@@ -32,7 +32,7 @@ pub fn exit_qemu(exit_code: QemuExitCode) -> !{
 fn panic(info: &PanicInfo) -> ! {
     serial_println!("[failure]");
     serial_println!("{}", info);
-    
+
     exit_qemu(QemuExitCode::Failed);
 }
 
@@ -51,25 +51,24 @@ where
     }
 }
 
-
-
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
+    init();
+
     // Calls the test harness which was re-exported in crate root
     crate::test_main();
-    #[allow(clippy::empty_loop)]
-    loop {}
+
+    exit_qemu(QemuExitCode::Success);
 }
 
 pub fn test_runner(tests: &[&dyn Testable]) {
     println!("Running {} tests", tests.len());
-    
+
     for test in tests {
         test.run();
     }
 
     println!("All tests passed");
-    exit_qemu(QemuExitCode::Success);
 }
 
 #[test_case]

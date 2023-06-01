@@ -10,7 +10,6 @@ mod tests;
 
 use colour::{Colour, ColourCode};
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 struct ScreenChar {
@@ -32,7 +31,6 @@ pub struct Writer {
     colour_code: ColourCode,
     buffer: &'static mut Buffer,
 }
-
 
 impl Writer {
     pub fn write_byte(&mut self, byte: u8) {
@@ -61,7 +59,6 @@ impl Writer {
                 // not part of printable ASCII range
                 _ => self.write_byte(0xfe),
             }
-
         }
     }
 
@@ -121,5 +118,10 @@ lazy_static! {
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    WRITER.lock().write_fmt(args).unwrap();
+    use x86_64::instructions::interrupts;
+
+    // Disable interrupts while locking mutex to prevent deadlock
+    interrupts::without_interrupts(|| {
+        WRITER.lock().write_fmt(args).unwrap();
+    });
 }

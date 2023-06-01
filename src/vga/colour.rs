@@ -20,7 +20,6 @@ pub enum Colour {
     White = 15,
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct ColourCode(u8);

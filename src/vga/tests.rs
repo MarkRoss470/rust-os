@@ -1,4 +1,3 @@
-
 #[test_case]
 /// Tests that the [`println!`] macro doesn't panic
 fn test_println_no_panic() {
