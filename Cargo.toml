@@ -7,9 +7,12 @@ edition = "2021"
 
 [dependencies]
 # For compiling the kernel to a bootable image
-bootloader = "0.9.8"
+bootloader = { version = "0.9.8", features=["map_physical_memory"]}
+# For volatile reads/writes to memory mapped IO
 volatile = "0.2.6"
+# For a #[no_std] mutex implementation
 spin = "0.5.2"
+
 # For x86_64 specific tasks, like IDT, GDT
 x86_64 = "0.14.2"
 # For configuring the interrupt controller

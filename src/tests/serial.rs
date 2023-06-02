@@ -4,6 +4,9 @@ use uart_16550::SerialPort;
 
 lazy_static! {
     pub static ref SERIAL1: Mutex<SerialPort> = {
+        // SAFETY:
+        // This code is only run in test builds, which are run under QEMU with the serial interface present.
+        // Additionally, this code is run only once and with high privileges.
         let mut serial_port = unsafe { SerialPort::new(0x3F8) };
         serial_port.init();
         Mutex::new(serial_port)

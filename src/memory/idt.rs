@@ -1,20 +1,35 @@
+//! Functionality to manage the Interrupt Descriptor Table, and the PICs which provide hardware interrupts
+
 use pic8259::ChainedPics;
 use spin::Mutex;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::vga::{set_colours, colour::{ColourCode, Colour}};
+use crate::vga::{
+    colour::{Colour, ColourCode},
+    set_colours,
+};
 
+/// The start of the interrupt range taken up by the first PIC.
+/// 32 is chosen because it is the first free interrupt slot after the 32 CPU exceptions.
 const PIC_1_OFFSET: u8 = 32;
+/// The start of the interrupt range taken up by the second PIC.
 const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 
-static PICS: spin::Mutex<ChainedPics> =
-    spin::Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
+/// Struct in charge of controlling the two PICs which give hardware interrupts.
+static PICS: Mutex<ChainedPics> = Mutex::new(
+    // SAFETY:
+    // These interrupt offsets do not interfere with the CPU exception range
+    unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) },
+);
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
         idt.breakpoint.set_handler_fn(breakpoint_handler);
         idt.page_fault.set_handler_fn(page_fault_handler);
+
+        // SAFETY:
+        // This stack is set up in init_gdt(), which is called before init_idt()
         unsafe {
             idt.double_fault.set_handler_fn(double_fault_handler)
                 .set_stack_index(super::gdt::DOUBLE_FAULT_IST_INDEX);
@@ -31,41 +46,61 @@ lazy_static! {
     };
 }
 
-pub fn init_idt() {
+/// Loads the IDT structure
+/// # Safety
+/// This function may only be called once
+pub unsafe fn init() {
     IDT.load();
 }
 
-pub fn init_pic() {
+/// # Safety
+/// This function may only be called once
+pub unsafe fn init_pic() {
+    // SAFETY:
+    // This function is only called once
     unsafe { PICS.lock().initialize() };
 }
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
+/// The index in the IDT where different types of hardware interrupt handlers will be registered
 pub enum InterruptIndex {
     Timer = PIC_1_OFFSET,
     Keyboard = PIC_1_OFFSET + 1,
 }
 
 impl InterruptIndex {
-    pub fn as_u8(self) -> u8 {
+    /// Get the value for a specific type of interrupt as a [`u8`]
+    pub const fn as_u8(self) -> u8 {
         self as u8
     }
 
+    /// Get the value for a specific type of interrupt as a [`usize`]
     pub fn as_usize(self) -> usize {
         usize::from(self.as_u8())
     }
 }
 
+/// Notifies the interrupt controller that a handler has ended
+/// # Safety
+/// This function may only be called by hardware interrupt handlers, once per call, directly before the handler returns 
 unsafe fn end_interrupt() {
-    PICS.lock()
-        .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
+    // SAFETY:
+    // These safety requirements are enforced by the caller
+    unsafe {
+        PICS.lock()
+            .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
+    }
 }
 
+/// The interrupt handler which is called by a cpu `int3` breakpoint instruction
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     set_colours(ColourCode::new(Colour::Blue, Colour::Black));
     println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
 }
 
+/// The interrupt handler which is called when a page fault occurs, 
+/// when the CPU tries to access a page of virtual memory which is not mapped, or is mapped with the wrong permissions
 extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
@@ -83,6 +118,7 @@ extern "x86-interrupt" fn page_fault_handler(
     }
 }
 
+/// The interrupt handler which is called when a key is pressed on the (virtual) PS/2 port
 extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
     use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
     use x86_64::instructions::port::Port;
@@ -102,6 +138,8 @@ extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
     let mut port = Port::new(KEYBOARD_INPUT_PORT);
 
     // Read the scancode from the port
+    // SAFETY:
+    // On x86, port 0x60 reads scancodes from the (virtual) PS/2 keyboard controller
     let scancode: u8 = unsafe { port.read() };
 
     // Parse the scancode using the pc-keyboard crate
@@ -114,11 +152,16 @@ extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
         }
     }
 
+    // SAFETY:
+    // This function is a hardware interrupt handler, so it must tell the interrupt controller that the handler has completed before exiting.
     unsafe {
         end_interrupt();
     }
 }
 
+/// The interrupt handler which is called when a double fault occurs, when a CPU exception occurs during an interrupt handler,
+/// or when an interrupt is raised which does not have an associated handler.
+/// If an exception happens inside the double fault handler, the CPU resets.
 extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,
     _error_code: u64,
@@ -128,7 +171,10 @@ extern "x86-interrupt" fn double_fault_handler(
     panic!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
 }
 
+/// The interrupt handler which is called for the PIC timer interrupt
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    // SAFETY:
+    // This function is a hardware interrupt handler, so it must tell the interrupt controller that the handler has completed before exiting.
     unsafe {
         end_interrupt();
     }

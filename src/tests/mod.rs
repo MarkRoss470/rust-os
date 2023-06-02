@@ -1,5 +1,7 @@
 use core::panic::PanicInfo;
 
+use bootloader::BootInfo;
+
 use crate::{init, serial_print};
 
 #[macro_use]
@@ -15,6 +17,9 @@ pub enum QemuExitCode {
 pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
     use x86_64::instructions::port::Port;
 
+    // SAFETY:
+    // This port should exit the program immediately if running under QEMU. 
+    // This code should only be compiled when running tests, so it only needs to work under QEMU anyway.
     unsafe {
         let mut port = Port::new(0xf4);
         port.write(exit_code as u32);
@@ -51,9 +56,13 @@ where
     }
 }
 
-#[no_mangle]
-pub extern "C" fn _start() -> ! {
-    init();
+bootloader::entry_point!(kernel_main);
+
+fn kernel_main(_boot_info: &'static BootInfo) -> ! {
+    // SAFETY:
+    // This is the entry point for the program, so init() cannot have been run before.
+    // This code runs with kernel privileges
+    unsafe {init();}
 
     // Calls the test harness which was re-exported in crate root
     crate::test_main();

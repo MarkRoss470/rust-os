@@ -1,3 +1,6 @@
+//! Types for representing VGA colours
+
+/// A VGA colour, either foreground or background
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -20,12 +23,15 @@ pub enum Colour {
     White = 15,
 }
 
+/// A combination of a foreground and background [`Colour`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
+#[allow(clippy::module_name_repetitions)]
 pub struct ColourCode(u8);
 
 impl ColourCode {
-    pub fn new(foreground: Colour, background: Colour) -> ColourCode {
-        ColourCode((background as u8) << 4 | (foreground as u8))
+    /// Constructs a new [`ColourCode`] from a foreground and background [`Colour`]
+    pub const fn new(foreground: Colour, background: Colour) -> Self {
+        Self((background as u8) << 4 | (foreground as u8))
     }
 }
