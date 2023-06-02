@@ -58,11 +58,11 @@ where
 
 bootloader::entry_point!(kernel_main);
 
-fn kernel_main(_boot_info: &'static BootInfo) -> ! {
+fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // SAFETY:
     // This is the entry point for the program, so init() cannot have been run before.
     // This code runs with kernel privileges
-    unsafe {init();}
+    unsafe {init(boot_info);}
 
     // Calls the test harness which was re-exported in crate root
     crate::test_main();

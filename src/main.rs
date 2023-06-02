@@ -1,5 +1,5 @@
 //! A 64-bit OS for x86_64 systems.
- 
+
 #![no_std] // don't link the Rust standard library
 #![no_main] // disable all Rust-level entry points
 
@@ -7,10 +7,8 @@
 #![feature(custom_test_frameworks)]
 #![test_runner(crate::tests::test_runner)]
 #![reexport_test_harness_main = "test_main"]
-
 // For interrupts
 #![feature(abi_x86_interrupt)]
-
 // Set up warnings and lints
 #![warn(
     //clippy::pedantic,
@@ -21,8 +19,11 @@
 )]
 #![deny(clippy::undocumented_unsafe_blocks)]
 
+// Use the std alloc crate for heap allocation
+extern crate alloc;
+
 use bootloader::BootInfo;
-use memory::frame_allocator::BootInfoFrameAllocator;
+use memory::BootInfoFrameAllocator;
 use x86_64::structures::paging::OffsetPageTable;
 use x86_64::VirtAddr;
 
@@ -60,16 +61,23 @@ struct KernelState {
 unsafe fn init(boot_info: &'static BootInfo) -> KernelState {
     // SAFETY: This function is only called once. If the `physical_memory_offset` field of the BootInfo struct exists,
     // then the bootloader will have mapped all of physical memory at that address.
-    let offset_page_table = unsafe {
+    let mut offset_page_table = unsafe {
         memory::init_mem(VirtAddr::new(boot_info.physical_memory_offset))
     };
 
-    // SAFETY: The provided boot_info is correct
-    let frame_allocator = unsafe {
-        memory::frame_allocator::BootInfoFrameAllocator::init(&boot_info.memory_map)
-    };
+    // SAFETY: The provided `boot_info` is correct
+    let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
 
-    KernelState { offset_page_table, frame_allocator }
+    // SAFETY: This function is only called once. The provided `boot_info` is correct, so so are `offset_page_table` and `frame_allocator`
+    unsafe {
+        memory::allocator::init_heap(&mut offset_page_table, &mut frame_allocator)
+            .expect("Initialising the heap should have succeeded")
+    }
+
+    KernelState {
+        offset_page_table,
+        frame_allocator,
+    }
 }
 
 // Set kernel_main as the entrypoint, with type-checked arguments

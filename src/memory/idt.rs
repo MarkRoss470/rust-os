@@ -1,5 +1,6 @@
 //! Functionality to manage the Interrupt Descriptor Table, and the PICs which provide hardware interrupts
 
+use alloc::string::ToString;
 use pic8259::ChainedPics;
 use spin::Mutex;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
@@ -62,9 +63,9 @@ pub unsafe fn init_pic() {
     unsafe { PICS.lock().initialize() };
 }
 
+/// The index in the IDT where different types of hardware interrupt handlers will be registered
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
-/// The index in the IDT where different types of hardware interrupt handlers will be registered
 pub enum InterruptIndex {
     Timer = PIC_1_OFFSET,
     Keyboard = PIC_1_OFFSET + 1,
@@ -119,6 +120,8 @@ extern "x86-interrupt" fn page_fault_handler(
     }
 }
 
+static INPUT_STRING: Mutex<alloc::string::String> = Mutex::new(alloc::string::String::new());
+
 /// The interrupt handler which is called when a key is pressed on the (virtual) PS/2 port
 extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
     use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
@@ -147,7 +150,16 @@ extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
         if let Some(key) = keyboard.process_keyevent(key_event) {
             match key {
-                DecodedKey::Unicode(character) => print!("{}", character),
+                DecodedKey::Unicode(character) => {
+                    print!("{}", character);
+                    
+                    if character == '\n' {
+                        println!("You typed: {}", *INPUT_STRING.lock());
+                        *INPUT_STRING.lock() = alloc::string::String::new();
+                    }
+
+                    *INPUT_STRING.lock() += &character.to_string();
+                },
                 DecodedKey::RawKey(key) => print!("{:?}", key),
             }
         }
@@ -181,8 +193,8 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
     }
 }
 
-#[test_case]
 /// Tests that invoking an `int3` instruction does not panic
+#[test_case]
 fn test_breakpoint_no_panic() {
     x86_64::instructions::interrupts::int3();
 }

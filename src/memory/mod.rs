@@ -3,7 +3,10 @@
 
 mod gdt;
 mod idt;
-pub mod frame_allocator;
+mod frame_allocator;
+pub mod allocator;
+
+pub use frame_allocator::BootInfoFrameAllocator;
 
 use x86_64::structures::paging::OffsetPageTable;
 use x86_64::structures::paging::PageTable;
