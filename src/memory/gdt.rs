@@ -7,6 +7,7 @@ use x86_64::registers::segmentation::{Segment, CS};
 use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
 use x86_64::structures::tss::TaskStateSegment;
 use x86_64::VirtAddr;
+use lazy_static::lazy_static;
 
 /// The index into the IST of the stack the double fault handler will use
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;

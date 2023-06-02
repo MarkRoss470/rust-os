@@ -3,6 +3,7 @@
 use pic8259::ChainedPics;
 use spin::Mutex;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
+use lazy_static::lazy_static;
 
 use crate::vga::{
     colour::{Colour, ColourCode},

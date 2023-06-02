@@ -27,9 +27,6 @@ use x86_64::structures::paging::OffsetPageTable;
 use x86_64::VirtAddr;
 
 #[macro_use]
-extern crate lazy_static;
-
-#[macro_use]
 mod vga;
 mod memory;
 #[cfg(test)]
