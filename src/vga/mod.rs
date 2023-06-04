@@ -25,7 +25,7 @@ const BUFFER_HEIGHT: usize = 25;
 /// The width of each line in the VGA buffer
 const BUFFER_WIDTH: usize = 80;
 
-/// The VGA buffer itself - 
+/// The VGA buffer itself -
 /// a rectangular buffer of [`ScreenChar`]s which is mapped in memory over the hardware VGA buffer.
 /// Because of this mapping, writing to the buffer will cause the written [`ScreenChar`] to appear on screen.
 /// To prevent the writes from being optimised away, the [`Volatile`] wrapper type is used.

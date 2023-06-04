@@ -1,11 +1,12 @@
 //! Types and functions for managing memory and the CPU's state.
 //! This includes managing the GDT and IDT, configuring the PICs, and loading interrupt handlers.
 
+pub mod allocator;
+mod frame_allocator;
 mod gdt;
 mod idt;
-mod frame_allocator;
-pub mod allocator;
 
+use bootloader::bootinfo::MemoryMap;
 pub use frame_allocator::BootInfoFrameAllocator;
 
 use x86_64::structures::paging::OffsetPageTable;
@@ -40,7 +41,7 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 /// # Safety:
 /// This function may only be called once, and must be called with kernel privileges.
 /// All of physical memory must be mapped starting at address given by `physical_memory_offset`
-pub unsafe fn init_mem(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
+pub unsafe fn init_cpu(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
     // Load the GDT structure
     // SAFETY:
     // init_mem is only called once and this is the only call-site of init_gdt
@@ -67,4 +68,14 @@ pub unsafe fn init_mem(physical_memory_offset: VirtAddr) -> OffsetPageTable<'sta
     // The given level_4_table is correct as long as `physical_memory_offset` is correct,
     // as is `physical_memory_offset` itself.
     unsafe { OffsetPageTable::new(level_4_table, physical_memory_offset) }
+}
+
+/// Initialises the [global frame allocator][crate::global_state::KernelState::frame_allocator].
+///
+/// # Safety
+/// This function must only be called once. The provided [`MemoryMap`] must be valid and correct.
+pub unsafe fn init_frame_allocator(memory_map: &'static MemoryMap) -> BootInfoFrameAllocator {
+    // SAFETY:
+    // `memory_map` is valid as a safety condition of this function
+    unsafe { BootInfoFrameAllocator::init(memory_map) }
 }

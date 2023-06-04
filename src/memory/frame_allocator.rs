@@ -1,8 +1,8 @@
 //! Contains the [`BootInfoFrameAllocator`] type which allocates frames of physical memory
 
 use bootloader::bootinfo::{MemoryMap, MemoryRegionType};
-use x86_64::PhysAddr;
 use x86_64::structures::paging::{FrameAllocator, PhysFrame, Size4KiB};
+use x86_64::PhysAddr;
 
 /// A [`FrameAllocator`] that returns usable frames from the bootloader's memory map.
 #[derive(Debug)]
@@ -17,9 +17,9 @@ impl BootInfoFrameAllocator {
     /// Create a [`FrameAllocator`] from the passed memory map.
     ///
     /// # Safety
-    /// The caller must guarantee that the passed
-    /// memory map is valid. The main requirement is that all frames that are marked
+    /// The passed [`MemoryMap`] must be valid. The main requirement is that all frames that are marked
     /// as `USABLE` in it are really unused.
+    /// The returned [`FrameAllocator`] must be the only frame allocator globally, or frames will be allocated twice, causing undefined behaviour.
     pub unsafe fn init(memory_map: &'static MemoryMap) -> Self {
         Self {
             memory_map,
@@ -31,11 +31,9 @@ impl BootInfoFrameAllocator {
     fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
         // get usable regions from memory map
         let regions = self.memory_map.iter();
-        let usable_regions = regions
-            .filter(|r| r.region_type == MemoryRegionType::Usable);
+        let usable_regions = regions.filter(|r| r.region_type == MemoryRegionType::Usable);
         // map each region to its address range
-        let addr_ranges = usable_regions
-            .map(|r| r.range.start_addr()..r.range.end_addr());
+        let addr_ranges = usable_regions.map(|r| r.range.start_addr()..r.range.end_addr());
         // transform to an iterator of frame start addresses
         let frame_addresses = addr_ranges.flat_map(|r| r.step_by(4096));
         // create `PhysFrame` types from the start addresses
@@ -52,3 +50,16 @@ unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
         frame
     }
 }
+
+// impl KernelFrameAllocator {
+//     pub fn allocate_frame(&self) -> Option<PhysFrame> {
+//         self.0
+//             .lock()
+//             .expect("Frame allocator should have been initialised")
+//             .allocate_frame()
+//     }
+
+//     pub fn lock(&self) -> MutexGuard<Option<BootInfoFrameAllocator>> {
+//         self.0.lock()
+//     }
+// }

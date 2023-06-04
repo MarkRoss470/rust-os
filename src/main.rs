@@ -23,15 +23,16 @@
 extern crate alloc;
 
 use bootloader::BootInfo;
-use memory::BootInfoFrameAllocator;
-use x86_64::structures::paging::OffsetPageTable;
 use x86_64::VirtAddr;
 
 #[macro_use]
 mod vga;
+mod global_state;
 mod memory;
 #[cfg(test)]
 mod tests;
+
+use global_state::*;
 
 /// This function is called on panic.
 #[cfg(not(test))]
@@ -39,18 +40,11 @@ mod tests;
 fn panic(info: &core::panic::PanicInfo) -> ! {
     println!("{info}");
 
+    x86_64::instructions::interrupts::disable();
+
     loop {
         x86_64::instructions::hlt();
     }
-}
-
-/// The state of the kernel, and resources needed to manage memory and hardware
-#[derive(Debug)]
-struct KernelState {
-    /// Struct which manages page tables to map virtual pages to physical memory
-    offset_page_table: OffsetPageTable<'static>,
-    /// Struct which allocates free frames of physical memory
-    frame_allocator: BootInfoFrameAllocator,
 }
 
 /// Initialises the kernel and constructs a [`KernelState`] struct to represent it.
@@ -58,26 +52,20 @@ struct KernelState {
 /// # Safety:
 /// This function may only be called once, and must be called with kernel privileges.
 /// The provided `boot_info` must be valid and correct.
-unsafe fn init(boot_info: &'static BootInfo) -> KernelState {
+unsafe fn init(boot_info: &'static BootInfo) {
     // SAFETY: This function is only called once. If the `physical_memory_offset` field of the BootInfo struct exists,
     // then the bootloader will have mapped all of physical memory at that address.
-    let mut offset_page_table = unsafe {
-        memory::init_mem(VirtAddr::new(boot_info.physical_memory_offset))
-    };
+    let page_table = unsafe { memory::init_cpu(VirtAddr::new(boot_info.physical_memory_offset)) };
+    KERNEL_STATE.page_table.init(page_table);
 
     // SAFETY: The provided `boot_info` is correct
-    let mut frame_allocator = unsafe { BootInfoFrameAllocator::init(&boot_info.memory_map) };
+    let frame_allocator = unsafe { memory::init_frame_allocator(&boot_info.memory_map) };
+    KERNEL_STATE.frame_allocator.init(frame_allocator);
 
     // SAFETY: This function is only called once. The provided `boot_info` is correct, so so are `offset_page_table` and `frame_allocator`
-    unsafe {
-        memory::allocator::init_heap(&mut offset_page_table, &mut frame_allocator)
-            .expect("Initialising the heap should have succeeded")
-    }
+    unsafe { memory::allocator::init_heap().expect("Initialising the heap should have succeeded") }
 
-    KernelState {
-        offset_page_table,
-        frame_allocator,
-    }
+    println!("Finished initialising kernel");
 }
 
 // Set kernel_main as the entrypoint, with type-checked arguments
@@ -86,11 +74,15 @@ bootloader::entry_point!(kernel_main);
 
 /// The entry point for the kernel.
 /// This function initialises memory maps and interrupts
+
+// To stop clippy giving a warning
+// For some reason #[cfg(not(test))] takes away inlay hints and smart autocomplete
+#[cfg_attr(test, allow(dead_code))]
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // SAFETY:
     // This is the entry point for the program, so init() cannot have been run before.
     // This code runs with kernel privileges
-    let mut _kernel_state = unsafe { init(boot_info) };
+    unsafe { init(boot_info) };
 
     loop {
         x86_64::instructions::hlt();

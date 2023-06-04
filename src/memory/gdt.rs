@@ -2,12 +2,12 @@
 //! The GDT is not used for as much on 64-bit CPUs as it was on 32-bit ones as segmentation is not supported on x86_64, but it still has some functions.
 //! This includes managing the stacks which interrupt handlers use, and switching between different privilege levels.
 
+use lazy_static::lazy_static;
 use x86_64::instructions::tables::load_tss;
 use x86_64::registers::segmentation::{Segment, CS};
 use x86_64::structures::gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector};
 use x86_64::structures::tss::TaskStateSegment;
 use x86_64::VirtAddr;
-use lazy_static::lazy_static;
 
 /// The index into the IST of the stack the double fault handler will use
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
@@ -58,13 +58,12 @@ lazy_static! {
     };
 }
 
-
 /// Initialises the GDT
-/// 
+///
 /// # Safety
 /// This function must only be called once.
 /// All of physical memory must be mapped starting at the address given by `physical_memory_offset`.
-pub unsafe fn init(){
+pub unsafe fn init() {
     GDT.0.load();
 
     // SAFETY:
@@ -74,4 +73,3 @@ pub unsafe fn init(){
         load_tss(GDT.1.tss_selector);
     }
 }
-

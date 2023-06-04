@@ -18,7 +18,7 @@ pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
     use x86_64::instructions::port::Port;
 
     // SAFETY:
-    // This port should exit the program immediately if running under QEMU. 
+    // This port should exit the program immediately if running under QEMU.
     // This code should only be compiled when running tests, so it only needs to work under QEMU anyway.
     unsafe {
         let mut port = Port::new(0xf4);
@@ -62,7 +62,9 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // SAFETY:
     // This is the entry point for the program, so init() cannot have been run before.
     // This code runs with kernel privileges
-    unsafe {init(boot_info);}
+    unsafe {
+        init(boot_info);
+    }
 
     // Calls the test harness which was re-exported in crate root
     crate::test_main();

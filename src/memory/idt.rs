@@ -1,10 +1,10 @@
 //! Functionality to manage the Interrupt Descriptor Table, and the PICs which provide hardware interrupts
 
-use alloc::string::ToString;
+use alloc::string::String;
+use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin::Mutex;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
-use lazy_static::lazy_static;
 
 use crate::vga::{
     colour::{Colour, ColourCode},
@@ -85,7 +85,7 @@ impl InterruptIndex {
 
 /// Notifies the interrupt controller that a handler has ended
 /// # Safety
-/// This function may only be called by hardware interrupt handlers, once per call, directly before the handler returns 
+/// This function may only be called by hardware interrupt handlers, once per call, directly before the handler returns
 unsafe fn end_interrupt() {
     // SAFETY:
     // These safety requirements are enforced by the caller
@@ -101,7 +101,7 @@ extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
 }
 
-/// The interrupt handler which is called when a page fault occurs, 
+/// The interrupt handler which is called when a page fault occurs,
 /// when the CPU tries to access a page of virtual memory which is not mapped, or is mapped with the wrong permissions
 extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
@@ -120,7 +120,8 @@ extern "x86-interrupt" fn page_fault_handler(
     }
 }
 
-static INPUT_STRING: Mutex<alloc::string::String> = Mutex::new(alloc::string::String::new());
+/// A temporary global [`String`] to test the kernel heap allocator
+static INPUT_STRING: Mutex<String> = Mutex::new(String::new());
 
 /// The interrupt handler which is called when a key is pressed on the (virtual) PS/2 port
 extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
@@ -152,14 +153,14 @@ extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
             match key {
                 DecodedKey::Unicode(character) => {
                     print!("{}", character);
-                    
+
                     if character == '\n' {
                         println!("You typed: {}", *INPUT_STRING.lock());
-                        *INPUT_STRING.lock() = alloc::string::String::new();
+                        *INPUT_STRING.lock() = String::new();
                     }
 
-                    *INPUT_STRING.lock() += &character.to_string();
-                },
+                    INPUT_STRING.lock().push(character);
+                }
                 DecodedKey::RawKey(key) => print!("{:?}", key),
             }
         }
