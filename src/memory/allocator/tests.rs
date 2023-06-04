@@ -1,3 +1,5 @@
+use super::list_node::ListNode;
+
 /// Tests that heap allocation does not panic and that values are stored correctly
 #[test_case]
 fn test_heap_allocation() {
@@ -35,4 +37,27 @@ fn test_reallocation() {
         let b = Box::new(i);
         core::hint::black_box(b);
     }
+}
+
+/// It is relied on in [`LinkedListAllocator`][super::LinkedListAllocator] that
+/// `<pointer to ListNode>::offset(1) as usize` is equivalent to `<pointer to ListNode> as usize + ListNode::OFFSET`.
+/// This function tests that assumption
+#[test_case]
+fn test_offset() {
+    // Construct a fictitious pointer
+    // This is not UB as pointers don't have to point to valid data like references do, and this pointer will never be dereferenced
+    let ptr = 0x1000 as *const ListNode;
+
+    // Test the equivalence
+    assert_eq!(
+        // SAFETY: offset is constant and can't wrap
+        unsafe { ptr.offset(1) as usize },
+        ptr as usize + ListNode::OFFSET
+    );
+    // Test the equivalence with subtraction
+    assert_eq!(
+        // SAFETY: offset is constant and can't wrap
+        unsafe { ptr.offset(-1) as usize },
+        ptr as usize - ListNode::OFFSET
+    );
 }

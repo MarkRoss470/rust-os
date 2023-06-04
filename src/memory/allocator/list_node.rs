@@ -1,8 +1,6 @@
 //! Contains the [`ListNode`] type
 
 use super::align_up;
-#[cfg(doc)]
-use super::LinkedListAllocator;
 
 /// A node in the linked list of a [`LinkedListAllocator`]
 #[derive(Debug)]
@@ -75,27 +73,4 @@ impl ListNode {
         // Computed offset cannot overflow due to the check above, and that the size of `u8` is 1 byte
         unsafe { self.get_allocation_start().offset(offset) }
     }
-}
-
-/// It is relied on in [`LinkedListAllocator`] that
-/// `<pointer to ListNode>::offset(1) as usize` is equivalent to `<pointer to ListNode> as usize + ListNode::OFFSET`.
-/// This function tests that assumption
-#[test_case]
-fn test_offset() {
-    // Construct a fictitious pointer
-    // This is not UB as pointers don't have to point to valid data like references do, and this pointer will never be dereferenced
-    let ptr = 0x1000 as *const ListNode;
-
-    // Test the equivalence
-    assert_eq!(
-        // SAFETY: offset is constant and can't wrap
-        unsafe { ptr.offset(1) as usize },
-        ptr as usize + ListNode::OFFSET
-    );
-    // Test the equivalence with subtraction
-    assert_eq!(
-        // SAFETY: offset is constant and can't wrap
-        unsafe { ptr.offset(-1) as usize },
-        ptr as usize - ListNode::OFFSET
-    );
 }
