@@ -50,16 +50,3 @@ unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
         frame
     }
 }
-
-// impl KernelFrameAllocator {
-//     pub fn allocate_frame(&self) -> Option<PhysFrame> {
-//         self.0
-//             .lock()
-//             .expect("Frame allocator should have been initialised")
-//             .allocate_frame()
-//     }
-
-//     pub fn lock(&self) -> MutexGuard<Option<BootInfoFrameAllocator>> {
-//         self.0.lock()
-//     }
-// }
