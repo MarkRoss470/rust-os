@@ -27,6 +27,49 @@ fn test_large_allocations() {
     assert_eq!(v.iter().sum::<u64>(), 1_000 * (1_000 + 1) / 2);
 }
 
+/// Tests that allocations are returned with the proper alignment
+#[test_case]
+fn test_allocation_alignment() {
+
+    use alloc::boxed::Box;
+
+    /// Defines a struct with the given alignment and size, allocates it in a [`Box`], and checks that it is correctly aligned
+    macro_rules! test_alignment {
+        ($align: expr, $size: expr) => {
+            {
+                // Define struct with given size and alignment
+                #[repr(align($align))]
+                struct AlignTest([u8; $size]);
+
+                // Allocate it and check alignment
+                let a = Box::new(AlignTest([0; $size]));
+                let addr = a.as_ref() as *const AlignTest as usize;
+                
+                // Black box is needed for check not to be optimised away
+                if addr % black_box($align) != 0 {
+                    panic!("Misaligned reference: returned address 0x{:x} should have had alignment 0x{:x}, but it did not.", addr, $align);
+                }
+            }
+        };
+    }
+
+    test_alignment!(4,    4);
+    test_alignment!(16,   4);
+    test_alignment!(256,  4);
+    test_alignment!(4096, 4);
+
+    test_alignment!(4,    256);
+    test_alignment!(16,   256);
+    test_alignment!(256,  256);
+    test_alignment!(4096, 256);
+
+    test_alignment!(4,    4096);
+    test_alignment!(16,   4096);
+    test_alignment!(256,  4096);
+    test_alignment!(4096, 4096);
+
+}
+
 /// Tests that once an allocation is deallocated, the memory can be re-used for other allocations
 #[test_case]
 fn test_reallocation() {

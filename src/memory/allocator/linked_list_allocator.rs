@@ -186,8 +186,9 @@ impl LinkedListAllocator {
                     let new_allocation_start = align_up(current_allocation_end, align);
                     let new_node_ptr = new_allocation_start - ListNode::OFFSET;
 
+                    // If the node would be allocated over the allocation of the previous node, move it forward
                     if new_node_ptr < current_allocation_end {
-                        (new_node_ptr + align.max(ListNode::OFFSET)) as *mut ListNode
+                        (new_node_ptr + align_up(ListNode::OFFSET, align)) as *mut ListNode
                     } else {
                         new_node_ptr as *mut ListNode
                     }
