@@ -1,3 +1,5 @@
+use core::hint::black_box;
+
 use super::list_node::ListNode;
 
 /// Tests that heap allocation does not panic and that values are stored correctly
@@ -10,7 +12,7 @@ fn test_heap_allocation() {
     assert_eq!(*a, 20);
 
     let s = "Hello world test string".to_string();
-    assert_eq!(s.chars().nth(17), Some('s'));
+    assert_eq!(s.chars().nth(black_box(17)), Some('s'));
 }
 
 /// Tests that large heap allocations do not panic, and that values are still stored correctly
@@ -21,7 +23,7 @@ fn test_large_allocations() {
     let mut v = Vec::new();
 
     for i in 0..=1_000 {
-        v.push(i);
+        v.push(black_box(i));
     }
 
     assert_eq!(v.iter().sum::<u64>(), 1_000 * (1_000 + 1) / 2);
@@ -78,7 +80,7 @@ fn test_reallocation() {
     // If allocations can't be reused, this will run out of memory
     for i in 0..10_000 {
         let b = Box::new(i);
-        core::hint::black_box(b);
+        black_box(b);
     }
 }
 

@@ -2,7 +2,7 @@
 
 use super::align_up;
 
-/// A node in the linked list of a [`LinkedListAllocator`]
+/// A node in the linked list of a [`LinkedListAllocator`][super::LinkedListAllocator]
 #[derive(Debug)]
 pub struct ListNode {
     /// The size of the [`ListNode`]'s allocation
@@ -13,7 +13,8 @@ pub struct ListNode {
     /// If `false`, the previous allocation has expired and the memory can be re-allocated.
     pub allocated: bool,
 
-    /// The next node in the list, if this is not the last node
+    /// The next node in the list, if this is not the last node.
+    /// [`ListNode`]s are linked sequentially in memory. `next` may only point to the [`ListNode`] directly after this one in memory.
     pub next: Option<&'static mut ListNode>,
 }
 

@@ -96,6 +96,128 @@ fn map_frames(
     Ok(())
 }
 
+/// Combines adjacent unallocated nodes into one node, starting with the given node.
+fn combine_unallocated(node: &mut ListNode) {
+    if node.allocated {
+        return;
+    }
+
+    // Loop until an allocated node is found
+    while let Some(
+        next_node @ ListNode {
+            allocated: false, ..
+        },
+    ) = &node.next
+    {
+        // Get the end of the allocation before moving the node into a local variable, as otherwise the wrong address would be calculated.
+        let next_node_allocation_end = next_node.get_allocation_end();
+
+        // SAFETY:
+        // No references can exist to this node because the reference to `node` is mutable and therefore unique.
+        // This read is semantically a move out of `next_node`
+        let next_node = unsafe { core::ptr::read(*next_node) };
+        node.next = next_node.next;
+
+        // SAFETY: The new size is calculated to align with the end of the old allocation, so all the memory is owned and mapped.
+        unsafe {
+            node.set_size(next_node_allocation_end as usize - node.get_allocation_start() as usize);
+        }
+    }
+}
+
+/// Moves the given [`ListNode`] forward so that its allocation is aligned to the given alignment.
+/// If the node can't fit the given `size` and `align`, `Err` with the original node is returned instead.
+/// If the node is the last one in the list, its allocation will be expanded to the fit `size`.
+///
+/// # Safety:
+/// * `align` must be a power of 2.
+/// * The caller is responsible for updating the previous node to correctly point to the new node.
+/// * The caller is responsible for ensuring the memory belonging to the returned node is mapped before returning it further.
+unsafe fn align_next(
+    node: &'static mut ListNode,
+    align: usize,
+    size: usize,
+) -> Result<&'static mut ListNode, &'static mut ListNode> {
+    let current_allocation_start = node.get_allocation_start() as usize;
+    let aligned_start = align_up(current_allocation_start, align);
+
+    let aligned_size = match (node.get_allocation_end() as usize).checked_sub(aligned_start) {
+        None => return Err(node),
+        Some(aligned_size) => aligned_size,
+    };
+
+    if aligned_size < size {
+        // If the node is the last one in the list, the allocation can be freely expanded
+        if node.next.is_none() {
+            // SAFETY: this node is the last one in the list, so the size can be expanded as much as needed.
+            // The caller is responsible for ensuring the memory is mapped.
+            unsafe {
+                node.set_size(size + current_allocation_start - aligned_start);
+            }
+        } else {
+            return Err(node);
+        }
+    }
+
+    let node = if current_allocation_start != aligned_start {
+        let current_node_ptr = node as *const ListNode;
+        let next_node_ptr = (aligned_start - ListNode::OFFSET) as *mut ListNode;
+
+        // Move `next_node` so that the region after it is properly aligned
+        // SAFETY:
+        // The read is sound because that memory is no longer referenced by `current_node`, so it's equivalent to a move.
+        // The write is sound because the node can only be moved forward into memory that was already owned by it.
+        // The new size is sound because it is calculated so that the end of the allocation is in the same place.
+        unsafe {
+            let mut next_node_info = core::ptr::read(current_node_ptr);
+            next_node_info.set_size(aligned_size);
+            core::ptr::write(next_node_ptr, next_node_info);
+        }
+
+        // TODO: add another node for the free space if possible
+        // SAFETY: The pointer points to valid data because it was just written to
+        unsafe { &mut *next_node_ptr }
+    } else {
+        node
+    };
+
+    // If allocating `size` bytes into this allocation would leave a lot of unused space, split the node into two
+    if aligned_size > size + ListNode::ALIGN + 8 {
+        let new_node_ptr =
+            align_up(node.get_allocation_start() as usize + size, ListNode::ALIGN) as *mut ListNode;
+
+        // Save `node.next` to later set it on the new node
+        // This preserves the ordering of the list
+        let next_node = node.next.take();
+        
+        // SAFETY:
+        // This size is always smaller than the previous size, so the memory is mapped.
+        // It is unused as it only extends up to the new node, not past it.
+        unsafe {
+            node.set_size(new_node_ptr as usize - node.get_allocation_start() as usize);
+        }
+
+        // SAFETY:
+        // This memory no longer belongs to the previous node as its length was just changed,
+        // however as it used to be owned it is guaranteed to be mapped.
+        unsafe {
+            core::ptr::write(
+                new_node_ptr,
+                ListNode::new(
+                    node.get_allocation_end() as usize - new_node_ptr as usize,
+                    false,
+                    next_node,
+                ),
+            )
+        }
+
+        // SAFETY: This points to a valid object because it was just written to.
+        node.next = Some(unsafe { &mut *new_node_ptr });
+    }
+
+    Ok(node)
+}
+
 impl LinkedListAllocator {
     /// Initialises a new [`LinkedListAllocator`] in the given memory region.
     ///
@@ -124,14 +246,20 @@ impl LinkedListAllocator {
     }
 
     /// Gets a shared reference to the first node in the linked list.
-    fn get_head(&self) -> &'static ListNode {
+    ///
+    /// # Safety:
+    /// No references may exist to [`ListNode`]s on this heap.
+    unsafe fn get_head(&self) -> &'static ListNode {
         // SAFETY:
         // This `ListNode` was written in `init` and should never have been removed since.
         unsafe { &*(self.heap_start as *const ListNode) }
     }
 
     /// Gets a mutable reference to the first node in the linked list.
-    fn get_head_mut(&mut self) -> &'static mut ListNode {
+    ///
+    /// # Safety:
+    /// No other active references may exist to [`ListNode`]s on this heap.
+    unsafe fn get_head_mut(&mut self) -> &'static mut ListNode {
         // SAFETY:
         // This `ListNode` was written in `init` and should never have been removed since.
         unsafe { &mut *(self.heap_start as *mut ListNode) }
@@ -139,13 +267,20 @@ impl LinkedListAllocator {
 
     /// Prints all the [`ListNode`]s in the [`LinkedListAllocator`].
     /// This is useful for debugging the allocator itself.
+    ///
+    /// # Safety:
+    /// No references may exist to [`ListNode`]s on this heap.
+    /// This condition is probably okay to violate for debugging purposes, but this function should not be used otherwise without
+    /// making sure no [`ListNode`] references exist.
     #[allow(dead_code)]
-    fn print_nodes(&self) {
-        let mut current_node = self.get_head();
+    pub unsafe fn print_nodes(&self) {
+        // SAFETY: no references exist to list nodes
+        let mut current_node = unsafe { self.get_head() };
         loop {
             println!(
-                "ListNode at {:p}: size=0x{:x}, allocated={}",
+                "ListNode at {:p}: alloc at {:p}, size=0x{:x}, allocated={}",
                 current_node,
+                current_node.get_allocation_start(),
                 current_node.get_size(),
                 current_node.allocated
             );
@@ -160,25 +295,29 @@ impl LinkedListAllocator {
     /// or constructs a new one at the end of the list. If neither of these is possible, an [`AllocationError`] is returned.
     ///
     /// # Safety
-    /// `align` must be a power of 2
+    /// * `align` must be a power of 2
+    /// * No references to [`ListNode`]s anywhere in this [`LinkedListAllocator`] may be held when calling this function.
+    ///     This is because this function can mutate any node in the list while running.
+    ///     However, [allocated][ListNode::allocated] nodes are guaranteed to still be valid after the function exits,
+    ///     so these references may be converted to pointers before the function is called and back to references after the function exits.
     unsafe fn allocate_region(
         &mut self,
         size: usize,
         align: usize,
     ) -> Result<*mut ListNode, AllocationError> {
+        //println!("Allocating with size={} and align={}", size, align);
+
         // All allocations should be aligned the same as or greater than ListNodes,
         // so that the ListNode directly before each allocation is also correctly aligned
         let align = align.max(ListNode::ALIGN);
 
-        let mut current_node = self.get_head_mut();
+        // SAFETY: no references exist to list nodes.
+        let mut current_node = unsafe { self.get_head_mut() };
 
         loop {
             let next_node = current_node.next.take();
-            let Some(next_node) = next_node else {
+            let Some(mut next_node) = next_node else {
                 // Allocate a new allocation at the end of the list
-
-                // The new ListNode needs to be at
-                // The end of the allocation for the last node in the list aligned up to the align of ListNode,
 
                 let current_allocation_end = current_node.get_allocation_end() as usize;
 
@@ -223,46 +362,46 @@ impl LinkedListAllocator {
                 return Ok(new_node_ptr);
             };
 
-            if !next_node.allocated && next_node.get_size() >= size {
-                // Get the start point of the allocation aligned to the given alignment
-                let current_allocation_start = next_node.get_allocation_start() as usize;
-                let aligned_start = align_up(current_allocation_start, align);
-                let aligned_size = next_node.get_allocation_end() as usize - aligned_start;
+            // Combine adjacent unallocated nodes
+            combine_unallocated(next_node);
 
-                // If the allocation is still big enough after being aligned
-                if aligned_size >= size {
-                    let current_node_ptr = next_node as *const ListNode;
-                    let next_node_ptr = (aligned_start - ListNode::OFFSET) as *mut ListNode;
+            // If `next_node` is unallocated, try to fit the required size and alignment into it
+            if !next_node.allocated {
+                // SAFETY: `align` is a power of 2.
+                // If allocation succeeds, the memory region is mapped.
+                match unsafe { align_next(next_node, align, size) } {
+                    Ok(new_node) => {
+                        let new_node_ptr = new_node as *mut ListNode;
+                        new_node.allocated = true;
 
-                    current_node.next = None;
+                        if new_node.next.is_none() {
+                            let start_frame = ((new_node_ptr as usize) - self.heap_start) / 4096;
+                            let end_frame =
+                                (new_node.get_allocation_end() as usize - self.heap_start) / 4096;
 
-                    // Move `next_node` so that the region after it is properly aligned
-                    // TODO: optimise this if the two pointers are the same?
-                    // SAFETY:
-                    // The read is sound because that memory is no longer referenced by `current_node`, so it's equivalent to a move.
-                    // The write is sound because the node can only be moved forward into memory that was already owned by it.
-                    // The new size is sound because it is calculated so that the end of the allocation is in the same place.
-                    unsafe {
-                        let mut next_node_info = core::ptr::read(current_node_ptr);
-                        next_node_info.set_size(aligned_size);
-                        core::ptr::write(next_node_ptr, next_node_info);
+                            map_frames(
+                                self.heap_start,
+                                self.max_size,
+                                start_frame,
+                                end_frame - start_frame + 1,
+                            )?;
+                        }
+                        // SAFETY:
+                        // The new size is valid as it is calculated to not overlap with the next node.
+                        // The memory is guaranteed to be mapped as it was just mapped with `map_frames`.
+                        unsafe {
+                            current_node.set_size(
+                                // SAFETY: offset is a constant and so can't wrap
+                                new_node_ptr as usize
+                                    - current_node.get_allocation_start() as usize,
+                            );
+                        }
+
+                        current_node.next = Some(new_node);
+
+                        return Ok(new_node_ptr);
                     }
-
-                    // TODO: add another node for the free space if possible
-                    // SAFETY: The pointer points to valid data because it was just written to
-                    let next_node = unsafe { &mut *next_node_ptr };
-
-                    current_node.next = Some(next_node);
-
-                    // SAFETY:
-                    // The new size is valid as it is calculated to not overlap with the next node
-                    unsafe {
-                        current_node.set_size(
-                            next_node_ptr as usize - current_node.get_allocation_start() as usize,
-                        );
-                    }
-
-                    return Ok(next_node_ptr);
+                    Err(next_node_ref) => next_node = next_node_ref,
                 }
             }
 
@@ -276,8 +415,72 @@ impl LinkedListAllocator {
     /// # Safety:
     /// * `node` must be a valid [`ListNode`] belonging to this [`LinkedListAllocator`].
     unsafe fn deallocate_region(&mut self, node: &'static mut ListNode) {
-        // TODO: proper deallocations
         node.allocated = false;
+    }
+
+    /// Reallocate a given [`ListNode`] to have a larger allocation.
+    ///
+    /// # Safety:
+    /// * `node` must be an [allocated][ListNode::allocated] [`ListNode`] owned by this [`LinkedListAllocator`]
+    /// * `align` must be the same alignment the [`ListNode`] was originally allocated with, and must be a power of 2.
+    unsafe fn reallocate_region(
+        &mut self,
+        node: &'static mut ListNode,
+        new_size: usize,
+        align: usize,
+    ) -> Result<*mut ListNode, AllocationError> {
+        println!("Reallocating to {}", new_size);
+
+        // If the node already has enough space, don't move any data
+        if node.get_size() >= new_size {
+            return Ok(node);
+        }
+
+        // If the node is the last node in the list, expand it
+        if node.next.is_none() {
+            let start_frame = (node.get_allocation_start() as usize - self.heap_start) / 4096;
+            let end_frame = (node.get_allocation_end() as usize - self.heap_start) / 4096;
+
+            map_frames(
+                self.heap_start,
+                self.max_size,
+                start_frame,
+                end_frame - start_frame + 1,
+            )?;
+
+            // SAFETY:
+            // This node is the last one in the list, so the memory after it is unused.
+            // The memory was just mapped with `map_frames`.
+            unsafe {
+                node.set_size(new_size);
+            }
+            return Ok(node);
+        }
+
+        let node_ptr = node as *mut ListNode;
+        // Get rid of the reference to `node` while calling `allocate_region`
+        #[allow(dropping_references)]
+        drop(node);
+
+        // No optimisations applied, so allocate a new node
+        // SAFETY: `align` is a power of 2.
+        let new_node = unsafe { self.allocate_region(new_size, align) }?;
+
+        // SAFETY: This was converted from a reference to an allocated node before calling `allocate_region`,
+        // so it is guaranteed to still be valid.
+        let node = unsafe { &mut *node_ptr };
+
+        // Copy the data from the old node to the new one
+        // SAFETY: The allocations are distinct and both at least this size, so the copy is valid
+        unsafe {
+            core::ptr::copy_nonoverlapping(
+                node.get_allocation_start(),
+                new_node.offset(1) as *mut u8,
+                node.get_size(),
+            )
+        }
+
+        Ok(new_node)
     }
 }
 
@@ -322,6 +525,7 @@ unsafe impl GlobalAlloc for GlobalKernelHeapAllocator {
                 // The offset does not wrap as it is a constant.
                 .map(|node| node.offset(1) as *mut u8)
                 // Check that the pointer has the correct alignment
+                .map(|ptr| {debug_assert_eq!(ptr as usize, align_up(ptr as usize, layout.align())); ptr} )
                 .unwrap_or(null_mut())
         }
     }
@@ -335,6 +539,30 @@ unsafe impl GlobalAlloc for GlobalKernelHeapAllocator {
             self.lock()
                 // SAFETY: `ptr` is valid so `node` must be valid too
                 .deallocate_region(&mut *node);
+        }
+    }
+
+    unsafe fn realloc(
+        &self,
+        ptr: *mut u8,
+        layout: core::alloc::Layout,
+        new_size: usize,
+    ) -> *mut u8 {
+        // SAFETY: see individual lines
+        unsafe {
+            // Use `offset(-1)` because the given `ptr` points to the allocated memory, not to the node.
+            // SAFETY: `ptr` is guaranteed to be a valid allocation on this heap, so it must be after a valid `ListNode`
+            let node = &mut *(ptr as *mut ListNode).offset(-1);
+            self.0
+                .lock()
+                .reallocate_region(node, new_size, layout.align())
+                // use `offset(1)` here because we're returning the mapped memory region not the ListNode
+                // SAFETY: The starting and ending pointers are part of the same allocation.
+                // The offset does not wrap as it is a constant.
+                .map(|node| node.offset(1) as *mut u8)
+                // Check that the new pointer has the correct alignment
+                .map(|ptr| {debug_assert_eq!(ptr as usize, align_up(ptr as usize, layout.align())); ptr} )
+                .unwrap_or(null_mut())
         }
     }
 }
