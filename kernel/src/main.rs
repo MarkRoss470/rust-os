@@ -22,7 +22,7 @@
 // Use the std alloc crate for heap allocation
 extern crate alloc;
 
-use bootloader::BootInfo;
+use bootloader_api::BootInfo;
 use x86_64::VirtAddr;
 
 #[macro_use]
@@ -55,11 +55,11 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 unsafe fn init(boot_info: &'static BootInfo) {
     // SAFETY: This function is only called once. If the `physical_memory_offset` field of the BootInfo struct exists,
     // then the bootloader will have mapped all of physical memory at that address.
-    let page_table = unsafe { memory::init_cpu(VirtAddr::new(boot_info.physical_memory_offset)) };
+    let page_table = unsafe { memory::init_cpu(VirtAddr::new(boot_info.physical_memory_offset.into_option().unwrap())) };
     KERNEL_STATE.page_table.init(page_table);
 
     // SAFETY: The provided `boot_info` is correct
-    let frame_allocator = unsafe { memory::init_frame_allocator(&boot_info.memory_map) };
+    let frame_allocator = unsafe { memory::init_frame_allocator(&boot_info.memory_regions) };
     KERNEL_STATE.frame_allocator.init(frame_allocator);
 
     // SAFETY: This function is only called once. The provided `boot_info` is correct, so so are `offset_page_table` and `frame_allocator`
@@ -70,7 +70,7 @@ unsafe fn init(boot_info: &'static BootInfo) {
 
 // Set kernel_main as the entrypoint, with type-checked arguments
 #[cfg(not(test))]
-bootloader::entry_point!(kernel_main);
+bootloader_api::entry_point!(kernel_main);
 
 /// The entry point for the kernel.
 /// This function initialises memory maps and interrupts
@@ -78,10 +78,12 @@ bootloader::entry_point!(kernel_main);
 // To stop clippy giving a warning
 // For some reason #[cfg(not(test))] takes away inlay hints and smart autocomplete
 #[cfg_attr(test, allow(dead_code))]
-fn kernel_main(boot_info: &'static BootInfo) -> ! {
+fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // SAFETY:
     // This is the entry point for the program, so init() cannot have been run before.
     // This code runs with kernel privileges
+    loop {}
+    
     unsafe { init(boot_info) };
 
     loop {

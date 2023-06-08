@@ -6,7 +6,7 @@ mod frame_allocator;
 mod gdt;
 mod idt;
 
-use bootloader::bootinfo::MemoryMap;
+use bootloader_api::info::MemoryRegions;
 pub use frame_allocator::BootInfoFrameAllocator;
 
 use x86_64::structures::paging::OffsetPageTable;
@@ -74,7 +74,7 @@ pub unsafe fn init_cpu(physical_memory_offset: VirtAddr) -> OffsetPageTable<'sta
 ///
 /// # Safety
 /// This function must only be called once. The provided [`MemoryMap`] must be valid and correct.
-pub unsafe fn init_frame_allocator(memory_map: &'static MemoryMap) -> BootInfoFrameAllocator {
+pub unsafe fn init_frame_allocator(memory_map: &'static MemoryRegions) -> BootInfoFrameAllocator {
     // SAFETY:
     // `memory_map` is valid as a safety condition of this function
     unsafe { BootInfoFrameAllocator::init(memory_map) }

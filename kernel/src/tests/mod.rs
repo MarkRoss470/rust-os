@@ -1,6 +1,6 @@
 use core::panic::PanicInfo;
 
-use bootloader::BootInfo;
+use bootloader_api::BootInfo;
 
 use crate::{init, serial_print};
 
@@ -56,9 +56,9 @@ where
     }
 }
 
-bootloader::entry_point!(kernel_main);
+bootloader_api::entry_point!(kernel_main);
 
-fn kernel_main(boot_info: &'static BootInfo) -> ! {
+fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // SAFETY:
     // This is the entry point for the program, so init() cannot have been run before.
     // This code runs with kernel privileges

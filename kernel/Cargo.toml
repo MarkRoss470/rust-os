@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 # For compiling the kernel to a bootable image
-bootloader = { version = "0.9.8", features=["map_physical_memory"]}
+bootloader_api = "0.11"
 # For volatile reads/writes to memory mapped IO
 volatile = "0.2.6"
 # For a #[no_std] mutex implementation

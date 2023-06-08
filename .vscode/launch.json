@@ -6,19 +6,22 @@
     "configurations": [
         {
             "type": "lldb",
-            "request": "custom",
-            "name": "Debug executable 'os'",
+            "request": "launch",
+            "name": "Debug executable 'kernel-builder'",
             "cargo": {
                 "args": [
-                    "run",
-                    "--bin=os",
-                    "--package=os"
+                    "build",
+                    "--bin=kernel-builder",
+                    "--package=kernel-builder",
+                    "--manifest-path=kernel-builder/Cargo.toml"
                 ],
                 "filter": {
-                    "name": "os",
+                    "name": "kernel-builder",
                     "kind": "bin"
-                }
+                },
             },
+            "args": [],
+            "cwd": "${workspaceFolder}"
         }
     ]
 }
