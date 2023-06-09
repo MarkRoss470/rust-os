@@ -9,7 +9,7 @@ use x86_64::structures::paging::{
 use x86_64::VirtAddr;
 
 use crate::global_state::{GlobalState, GlobalStateLock};
-use crate::KERNEL_STATE;
+use crate::{KERNEL_STATE, println};
 
 use super::align_up;
 use super::list_node::ListNode;

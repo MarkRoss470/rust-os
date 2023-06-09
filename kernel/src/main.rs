@@ -22,23 +22,28 @@
 // Use the std alloc crate for heap allocation
 extern crate alloc;
 
-use bootloader_api::BootInfo;
+use bootloader_api::{BootInfo, BootloaderConfig};
 use x86_64::VirtAddr;
 
 #[macro_use]
-mod vga;
+mod serial;
+
 mod global_state;
 mod memory;
 #[cfg(test)]
 mod tests;
+mod graphics;
 
 use global_state::*;
+
+use crate::graphics::init_graphics;
 
 /// This function is called on panic.
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     println!("{info}");
+    serial_println!("KERNEL_PANIC: {}", info);
 
     x86_64::instructions::interrupts::disable();
 
@@ -52,7 +57,9 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 /// # Safety:
 /// This function may only be called once, and must be called with kernel privileges.
 /// The provided `boot_info` must be valid and correct.
-unsafe fn init(boot_info: &'static BootInfo) {
+unsafe fn init(boot_info: &'static mut BootInfo) {
+    init_graphics(boot_info.framebuffer.as_mut().unwrap());
+
     // SAFETY: This function is only called once. If the `physical_memory_offset` field of the BootInfo struct exists,
     // then the bootloader will have mapped all of physical memory at that address.
     let page_table = unsafe { memory::init_cpu(VirtAddr::new(boot_info.physical_memory_offset.into_option().unwrap())) };
@@ -68,9 +75,16 @@ unsafe fn init(boot_info: &'static BootInfo) {
     println!("Finished initialising kernel");
 }
 
+/// The config struct to instruct the bootloader how to load the kernel
+const BOOT_CONFIG: BootloaderConfig = {
+    let mut config = BootloaderConfig::new_default();
+    config.mappings.physical_memory = Some(bootloader_api::config::Mapping::Dynamic);
+    config
+};
+
 // Set kernel_main as the entrypoint, with type-checked arguments
 #[cfg(not(test))]
-bootloader_api::entry_point!(kernel_main);
+bootloader_api::entry_point!(kernel_main, config = &BOOT_CONFIG);
 
 /// The entry point for the kernel.
 /// This function initialises memory maps and interrupts
@@ -82,8 +96,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // SAFETY:
     // This is the entry point for the program, so init() cannot have been run before.
     // This code runs with kernel privileges
-    loop {}
-    
     unsafe { init(boot_info) };
 
     loop {

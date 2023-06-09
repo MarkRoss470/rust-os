@@ -2,10 +2,7 @@ use core::panic::PanicInfo;
 
 use bootloader_api::BootInfo;
 
-use crate::{init, serial_print};
-
-#[macro_use]
-mod serial;
+use crate::{init, serial_print, serial_println, println, BOOT_CONFIG};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
@@ -56,7 +53,7 @@ where
     }
 }
 
-bootloader_api::entry_point!(kernel_main);
+bootloader_api::entry_point!(kernel_main, config=&BOOT_CONFIG);
 
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // SAFETY:
