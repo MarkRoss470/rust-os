@@ -1,19 +1,27 @@
-#![allow(clippy::missing_docs_in_private_items)] // TODO: remove
+//! Functionality for drawing to a framebuffer
 
+mod font_const;
+
+use crate::{global_state::GlobalState, println};
+use bootloader_api::info::{FrameBuffer, FrameBufferInfo, PixelFormat};
 use core::fmt;
 
-use bootloader_api::info::{FrameBuffer, FrameBufferInfo, PixelFormat};
+use self::font_const::FONT_BITMAPS;
 
-use crate::{global_state::GlobalState, serial_println};
-
+/// A 24-bit colour
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Colour {
+    /// How much red in the colour
     pub red: u8,
+    /// How much green in the colour
     pub green: u8,
+    /// How much blue in the colour
     pub blue: u8,
 }
 
+#[allow(dead_code)]
 impl Colour {
+    /// Construct a colour from its constituent parts
     pub const fn from_rgb(r: u8, g: u8, b: u8) -> Self {
         Self {
             red: r,
@@ -22,21 +30,35 @@ impl Colour {
         }
     }
 
+    /// Black
     pub const BLACK: Self = Self::from_rgb(0, 0, 0);
+    /// White
     pub const WHITE: Self = Self::from_rgb(255, 255, 255);
 
+    /// Red
     pub const RED: Self = Self::from_rgb(255, 0, 0);
+    /// Green
     pub const GREEN: Self = Self::from_rgb(0, 255, 0);
+    /// Blue
     pub const BLUE: Self = Self::from_rgb(0, 0, 255);
 }
 
-struct FrameBufferController {
-    info: FrameBufferInfo,
+/// The size in pixels of each character
+const CHAR_OFFSET: usize = 10;
 
+/// A wrapper around a framebuffer with software rendering utility functions
+struct FrameBufferController {
+    /// Info about the framebuffer
+    info: FrameBufferInfo,
+    /// The buffer itself
     buffer: &'static mut [u8],
 }
 
 impl FrameBufferController {
+    /// Sets the pixel at position (`x`, `y`) from the top left of the framebuffer to the given colour.
+    /// Returns `Ok(())` if the write succeeded, or `Err(())` if it failed
+    /// (if the coordinate given is outside the buffer)
+    #[inline]
     fn write_pixel(&mut self, x: usize, y: usize, colour: Colour) -> Result<(), ()> {
         if x > self.info.width || y > self.info.height {
             return Err(());
@@ -56,6 +78,7 @@ impl FrameBufferController {
         Ok(())
     }
 
+    /// Clears the whole buffer with the given colour
     fn clear(&mut self, colour: Colour) {
         for y in 0..self.info.height {
             for x in 0..self.info.width {
@@ -64,6 +87,8 @@ impl FrameBufferController {
         }
     }
 
+    /// Draws a rectangle with the top left corner at (`x`, `y`),
+    /// with the given `width` and `height`, filled with the given colour
     fn draw_rect(
         &mut self,
         x: usize,
@@ -80,35 +105,72 @@ impl FrameBufferController {
 
         Ok(())
     }
+
+    /// Scrolls the buffer vertically by `scroll_by` pixels,
+    /// filling in the bottom rows with `fill`
+    fn scroll(&mut self, scroll_by: usize, fill: Colour) {
+        let byte_offset = scroll_by * self.info.stride * self.info.bytes_per_pixel;
+        let copy_from = &self.buffer[byte_offset] as *const u8;
+        let copy_to = &mut self.buffer[0] as *mut u8;
+        // Bound is calculated this way to make sure
+        let count = self.info.byte_len - byte_offset;
+
+        // SAFETY:
+        // This copy is all within `self.buffer`, so the memory is owned.
+        unsafe { core::ptr::copy(copy_from, copy_to, count) }
+
+        for y in self.info.height - scroll_by..self.info.height {
+            for x in 0..self.info.width {
+                self.write_pixel(x, y, fill).unwrap();
+            }
+        }
+    }
 }
 
-static FRAME_BUFFER: GlobalState<FrameBufferController> = GlobalState::new();
-
+/// A text writer into a framebuffer
 pub struct Writer {
+    /// The current row the [`Writer`] is writing at
     row: usize,
+    /// The current column the [`Writer`] is writing at
     column: usize,
 
+    /// The maximum width in columns the [`Writer`] can reach before moving to the next row
     width: usize,
+    /// The maximum height in rows the [`Writer`] can reach before scrolling the screen
     height: usize,
 
+    /// The current [`Colour`] of the text the [`Writer`] is rendering 
     colour: Colour,
+    /// The framebuffer the [`Writer`] is rendering into
+    buffer: FrameBufferController,
 }
 
 impl Writer {
-    // TODO: load a font and display characters properly
-    // For now, rely on the serial output being redirected by qemu
+    /// Writes a character to the screen
     fn write_char(&mut self, c: char) {
         if c == '\n' {
             self.row += 1;
             self.column = 0;
-            return;
-        }
+        } else if c.is_ascii() {
+            let start_x = self.column * CHAR_OFFSET;
+            let start_y = self.row * CHAR_OFFSET;
 
-        if c != ' ' {
-            FRAME_BUFFER
-                .lock()
-                .draw_rect(self.column * 10, self.row * 10, 10, 10, self.colour)
-                .unwrap();
+            let bitmap = FONT_BITMAPS[c as usize];
+
+            for (y, row) in bitmap.iter().enumerate() {
+                for x in 0..8 {
+                    // Extract one bit from the bitmap
+                    let colour = if row & (1 << x) != 0 {
+                        self.colour
+                    } else {
+                        Colour::BLACK
+                    };
+
+                    self.buffer
+                        .write_pixel(x + start_x, y + start_y, colour)
+                        .unwrap();
+                }
+            }
         }
 
         self.column += 1;
@@ -117,8 +179,14 @@ impl Writer {
             self.row += 1;
             self.column = 0;
         }
+
+        if self.row >= self.height {
+            self.buffer.scroll(CHAR_OFFSET, Colour::BLACK);
+            self.row = self.height - 1;
+        }
     }
 
+    /// Sets the [`colour`][Writer::colour] of the [`Writer`]
     pub fn set_colour(&mut self, colour: Colour) {
         self.colour = colour;
     }
@@ -133,24 +201,27 @@ impl fmt::Write for Writer {
     }
 }
 
+/// The global [`Writer`] used by [`print!`][crate::print!] and [`println!`][crate::println!]
 pub static WRITER: GlobalState<Writer> = GlobalState::new();
 
+/// Initialises the framebuffer.
 pub fn init_graphics(framebuffer: &'static mut FrameBuffer) {
     let info = framebuffer.info();
-
-    let mut buffer = FrameBufferController { info, buffer: framebuffer.buffer_mut() };
+    let mut buffer = FrameBufferController {
+        info,
+        buffer: framebuffer.buffer_mut(),
+    };
 
     buffer.clear(Colour::BLACK);
-
-    FRAME_BUFFER.init(buffer);
 
     WRITER.init(Writer {
         row: 0,
         column: 0,
-        width: 100,
-        height: 50,
+        width: info.width / CHAR_OFFSET - 1,
+        height: info.height / CHAR_OFFSET - 1,
         colour: Colour::WHITE,
-    })
+        buffer,
+    });
 }
 
 #[doc(hidden)]
@@ -168,17 +239,16 @@ pub fn _print(args: fmt::Arguments) {
     });
 }
 
-/// Prints formatted arguments into the global [`struct@WRITER`]
+/// Prints formatted arguments into the global [`static@WRITER`]
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => ({
         $crate::serial::_print(format_args!($($arg)*));
         $crate::graphics::_print(format_args!($($arg)*));
-        $crate::serial::_print(format_args!($($arg)*));
     });
 }
 
-/// Prints formatted arguments into the global [`struct@WRITER`], and then a newline.
+/// Prints formatted arguments into the global [`static@WRITER`], and then a newline.
 #[macro_export]
 macro_rules! println {
     () => ($crate::print!("\n"));
