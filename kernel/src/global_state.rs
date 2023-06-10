@@ -30,9 +30,19 @@ impl<T> GlobalState<T> {
         *s = Some(data);
     }
 
+    /// Tries to gets whether the [`GlobalState`] object has been initialised or not
+    pub fn try_is_init(&self) -> Option<bool> {
+        self.0.try_lock().map(|lock|lock.is_some())
+    }
+
     /// Lock the contained [`Mutex`], wrapped in a [`GlobalStateLock`]
     pub fn lock(&self) -> GlobalStateLock<T> {
         GlobalStateLock(self.0.lock())
+    }
+
+    /// Tries to lock the contained [`Mutex`]
+    pub fn try_lock(&self) -> Option<GlobalStateLock<T>> {
+        self.0.try_lock().map(|lock|GlobalStateLock(lock))
     }
 }
 

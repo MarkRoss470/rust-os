@@ -160,6 +160,10 @@ pub fn _print(args: fmt::Arguments) {
 
     // Disable interrupts while locking mutex to prevent deadlock
     interrupts::without_interrupts(|| {
+        // If the writer is not initialised, or is locked, return immediately without printing anything
+        if !WRITER.try_is_init().unwrap_or(false) {
+            return;
+        }
         WRITER.lock().write_fmt(args).unwrap();
     });
 }
@@ -168,6 +172,7 @@ pub fn _print(args: fmt::Arguments) {
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => ({
+        $crate::serial::_print(format_args!($($arg)*));
         $crate::graphics::_print(format_args!($($arg)*));
         $crate::serial::_print(format_args!($($arg)*));
     });
