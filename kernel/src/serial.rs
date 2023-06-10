@@ -1,3 +1,5 @@
+//! [`serial_print!`][crate::serial_print!] and [`serial_println!`][crate::serial_println!] macros for writing to serial port
+
 use lazy_static::lazy_static;
 use spin::Mutex;
 use uart_16550::SerialPort;
@@ -5,8 +7,8 @@ use uart_16550::SerialPort;
 lazy_static! {
     pub static ref SERIAL1: Mutex<SerialPort> = {
         // SAFETY:
-        // This code is only run in test builds, which are run under QEMU with the serial interface present.
-        // Additionally, this code is run only once and with high privileges.
+        // This just assumes a serial port exists on this port, which may not be the case
+        // TODO: detect whether there really is a serial port
         let mut serial_port = unsafe { SerialPort::new(0x3F8) };
         serial_port.init();
         Mutex::new(serial_port)

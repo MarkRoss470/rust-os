@@ -7,7 +7,7 @@ use x86_64::PhysAddr;
 /// A [`FrameAllocator`] that returns usable frames from the bootloader's memory map.
 #[derive(Debug)]
 pub struct BootInfoFrameAllocator {
-    /// The [`MemoryMap`] of what sections of physical memory are free
+    /// The [`MemoryRegion`] of what sections of physical memory are free
     memory_map: &'static [MemoryRegion],
     /// The index into [`self.usable_frames`][Self::usable_frames]
     next: usize,
@@ -17,7 +17,7 @@ impl BootInfoFrameAllocator {
     /// Create a [`FrameAllocator`] from the passed memory map.
     ///
     /// # Safety
-    /// The passed [`MemoryMap`] must be valid. The main requirement is that all frames that are marked
+    /// The passed [`MemoryRegion`] must be valid. The main requirement is that all frames that are marked
     /// as `USABLE` in it are really unused.
     /// The returned [`FrameAllocator`] must be the only frame allocator globally, or frames will be allocated twice, causing undefined behaviour.
     pub unsafe fn init(memory_map: &'static MemoryRegions) -> Self {
