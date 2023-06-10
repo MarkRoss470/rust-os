@@ -1,12 +1,12 @@
 //! Functionality to manage the Interrupt Descriptor Table, and the PICs which provide hardware interrupts
 
 use alloc::string::String;
-use lazy_static::lazy_static;
+use pc_keyboard::{Keyboard, layouts, ScancodeSet1, HandleControl, DecodedKey};
 use pic8259::ChainedPics;
 use spin::Mutex;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::{graphics::{WRITER, Colour}, println, print};
+use crate::{graphics::{WRITER, Colour}, println, print, global_state::GlobalState};
 
 /// The start of the interrupt range taken up by the first PIC.
 /// 32 is chosen because it is the first free interrupt slot after the 32 CPU exceptions.
@@ -21,35 +21,35 @@ static PICS: Mutex<ChainedPics> = Mutex::new(
     unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) },
 );
 
-lazy_static! {
-    static ref IDT: InterruptDescriptorTable = {
-        let mut idt = InterruptDescriptorTable::new();
-        idt.breakpoint.set_handler_fn(breakpoint_handler);
-        idt.page_fault.set_handler_fn(page_fault_handler);
-
-        // SAFETY:
-        // This stack is set up in init_gdt(), which is called before init_idt()
-        unsafe {
-            idt.double_fault.set_handler_fn(double_fault_handler)
-                .set_stack_index(super::gdt::DOUBLE_FAULT_IST_INDEX);
-        }
-
-        // Timer interrupt
-        idt[InterruptIndex::Timer.as_usize()]
-            .set_handler_fn(timer_interrupt_handler);
-        // Keyboard interrupt
-        idt[InterruptIndex::Keyboard.as_usize()]
-            .set_handler_fn(keyboard_handler);
-
-        idt
-    };
-}
+/// The Interrupt Descriptor Table
+static mut IDT: Option<InterruptDescriptorTable> = None;
 
 /// Loads the IDT structure
 /// # Safety
 /// This function may only be called once
 pub unsafe fn init() {
-    IDT.load();
+    let mut idt = InterruptDescriptorTable::new();
+    idt.breakpoint.set_handler_fn(breakpoint_handler);
+    idt.page_fault.set_handler_fn(page_fault_handler);
+    idt.invalid_opcode.set_handler_fn(invalid_opcode);
+    
+    idt.double_fault.set_handler_fn(double_fault_handler);
+
+    // Timer interrupt
+    idt[InterruptIndex::Timer.as_usize()]
+        .set_handler_fn(timer_interrupt_handler);
+    // Keyboard interrupt
+    idt[InterruptIndex::Keyboard.as_usize()]
+        .set_handler_fn(keyboard_handler);
+
+    // SAFETY: this is the only place this static is accessed, and it may only be accessed once.
+    unsafe {
+        IDT = Some(idt);
+        IDT.as_ref().unwrap().load();
+    }
+
+    KEYBOARD.init(Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore));
+
 }
 
 /// # Safety
@@ -95,7 +95,6 @@ unsafe fn end_interrupt() {
 /// The interrupt handler which is called by a cpu `int3` breakpoint instruction
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     WRITER.lock().set_colour(Colour::BLUE);
-    println!("EXCEPTION: BREAKPOINT\n{:#?}", stack_frame);
 }
 
 /// The interrupt handler which is called when a page fault occurs,
@@ -119,22 +118,16 @@ extern "x86-interrupt" fn page_fault_handler(
 
 /// A temporary global [`String`] to test the kernel heap allocator
 static INPUT_STRING: Mutex<String> = Mutex::new(String::new());
+/// Global variable to store the state of the keyboard
+/// e.g. whether shift is held
+static KEYBOARD: GlobalState<Keyboard<layouts::Us104Key, ScancodeSet1>> = GlobalState::new();
 
 /// The interrupt handler which is called when a key is pressed on the (virtual) PS/2 port
 extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
-    use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
     use x86_64::instructions::port::Port;
 
     /// The port number to read scancodes from
     const KEYBOARD_INPUT_PORT: u16 = 0x60;
-
-    // Make a global KEYBOARD variable to store the state of the keyboard
-    // e.g. whether shift is held
-    lazy_static! {
-        static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> = Mutex::new(
-            Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore)
-        );
-    }
 
     let mut keyboard = KEYBOARD.lock();
     let mut port = Port::new(KEYBOARD_INPUT_PORT);
@@ -175,10 +168,11 @@ extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
 /// If an exception happens inside the double fault handler, the CPU resets.
 extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,
-    _error_code: u64,
+    error_code: u64,
 ) -> ! {
     WRITER.lock().set_colour(Colour::RED);
 
+    println!("Error code: {}", error_code);
     panic!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
 }
 
@@ -189,6 +183,11 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
     unsafe {
         end_interrupt();
     }
+}
+
+/// Exception handler for when an invalid instruction is encountered
+extern "x86-interrupt" fn invalid_opcode(stack_frame: InterruptStackFrame) {
+    panic!("EXCEPTION: INVALID OPCODE\n{:#?}", stack_frame);
 }
 
 /// Tests that invoking an `int3` instruction does not panic

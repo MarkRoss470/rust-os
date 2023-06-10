@@ -1,4 +1,8 @@
-use std::{io::Read, path::PathBuf, process::{Stdio, Command}};
+use std::{
+    io::Read,
+    path::PathBuf,
+    process::{Command, Stdio},
+};
 
 /// This builder may be invoked with `pwd` = `project-root/kernel-builder` or just `project-root`.
 /// This function computes the relative path to the `kernel` crate for either of these options.
@@ -51,15 +55,24 @@ fn main() {
         .create_disk_image(&bios_path)
         .unwrap();
 
-    std::process::Command::new("qemu-system-x86_64")
-        .arg("-drive")
-        .arg(format!("format=raw,file={}", bios_path.to_str().unwrap()))
-        .arg("-serial")
-        .arg("stdio") // Redirect serial to stdout
-        .spawn()
-        .unwrap()
-        .wait()
+    // create a BIOS disk image
+    let uefi_path = out_dir.join("uefi.img");
+    bootloader::UefiBoot::new(&kernel)
+        .create_disk_image(&uefi_path)
         .unwrap();
+
+    // std::process::Command::new("qemu-system-x86_64")
+    //     .arg("-drive")
+    //     .arg(format!("format=raw,file={}", bios_path.to_str().unwrap()))
+    //     .arg("-serial")
+    //     .arg("stdio") // Redirect serial to stdout
+    //     .arg("-s").arg("-S")
+    //     .spawn()
+    //     .unwrap()
+    //     .wait()
+    //     .unwrap();
+
+    println!("{}", bios_path.to_str().unwrap());
 }
 
 /// Compiles the kernel in test mode and launches it
@@ -69,9 +82,7 @@ fn run_tests() {
 
     // Create a new cargo process to compile the kernel for tests
     let mut cargo_process = prepare_cargo_command(kernel_dir, "test");
-    cargo_process
-        .arg("--no-run")
-        .stderr(Stdio::piped());
+    cargo_process.arg("--no-run").stderr(Stdio::piped());
 
     let mut cargo_process = cargo_process.spawn().unwrap();
 
@@ -80,7 +91,7 @@ fn run_tests() {
 
     // Read the stderr of the cargo process to a String
     let mut output_str = String::new();
-    output.read_to_string(&mut output_str);
+    output.read_to_string(&mut output_str).unwrap();
 
     // Check that cargo exited successfully
     let exit_code = cargo_process.wait().unwrap().code().unwrap();
@@ -92,10 +103,10 @@ fn run_tests() {
 
     // Extract the path to the test kernel
     let test_bin = output_str
-        .split(" ")
+        .split(' ')
         .last()
         .unwrap() // Get the full path in brackets
-        .strip_prefix("(")
+        .strip_prefix('(')
         .unwrap() // Strip the start bracket
         .strip_suffix(")\n")
         .unwrap(); // Strip the end bracket

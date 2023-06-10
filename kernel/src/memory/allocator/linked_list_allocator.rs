@@ -429,7 +429,6 @@ impl LinkedListAllocator {
         new_size: usize,
         align: usize,
     ) -> Result<*mut ListNode, AllocationError> {
-        println!("Reallocating to {}", new_size);
 
         // If the node already has enough space, don't move any data
         if node.get_size() >= new_size {

@@ -14,7 +14,7 @@ volatile = "0.2.6"
 spin = "0.5.2"
 
 # For x86_64 specific tasks, like IDT, GDT
-x86_64 = "0.14.2"
+x86_64 = "0.14"
 # For configuring the interrupt controller
 pic8259 = "0.10.1"
 # For converting scancodes to characters

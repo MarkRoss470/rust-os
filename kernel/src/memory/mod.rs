@@ -3,7 +3,6 @@
 
 pub mod allocator;
 mod frame_allocator;
-mod gdt;
 mod idt;
 
 use bootloader_api::info::MemoryRegions;
@@ -42,19 +41,14 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
 /// This function may only be called once, and must be called with kernel privileges.
 /// All of physical memory must be mapped starting at address given by `physical_memory_offset`
 pub unsafe fn init_cpu(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
-    // Load the GDT structure
-    // SAFETY:
-    // init_mem is only called once and this is the only call-site of init_gdt
-    unsafe { gdt::init() }
-
     // Load the IDT structure, which defines interrupt and exception handlers
     // SAFETY:
-    // init_mem is only called once and this is the only call-site of init_gdt
+    // init_mem is only called once and this is the only call-site of idt::init
     unsafe { idt::init() }
 
     // Initialise the interrupt controller
     // SAFETY:
-    // init_mem is only called once and this is the only call-site of init_gdt
+    // init_mem is only called once and this is the only call-site of idt::init_pic
     unsafe { idt::init_pic() }
 
     // Enable interrupts on the CPU

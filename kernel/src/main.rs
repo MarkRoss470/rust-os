@@ -43,7 +43,6 @@ use crate::graphics::init_graphics;
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     println!("{info}");
-    serial_println!("KERNEL_PANIC: {}", info);
 
     x86_64::instructions::interrupts::disable();
 
@@ -59,18 +58,26 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 /// The provided `boot_info` must be valid and correct.
 unsafe fn init(boot_info: &'static mut BootInfo) {
     init_graphics(boot_info.framebuffer.as_mut().unwrap());
-
+    
+    println!("Initialised graphics");
+    
     // SAFETY: This function is only called once. If the `physical_memory_offset` field of the BootInfo struct exists,
     // then the bootloader will have mapped all of physical memory at that address.
     let page_table = unsafe { memory::init_cpu(VirtAddr::new(boot_info.physical_memory_offset.into_option().unwrap())) };
     KERNEL_STATE.page_table.init(page_table);
 
+    println!("Initialised page table");
+
     // SAFETY: The provided `boot_info` is correct
     let frame_allocator = unsafe { memory::init_frame_allocator(&boot_info.memory_regions) };
     KERNEL_STATE.frame_allocator.init(frame_allocator);
 
+    println!("Initialised frame allocator");
+
     // SAFETY: This function is only called once. The provided `boot_info` is correct, so so are `offset_page_table` and `frame_allocator`
     unsafe { memory::allocator::init_heap().expect("Initialising the heap should have succeeded") }
+
+    println!("Initialised heap");
 
     println!("Finished initialising kernel");
 }
@@ -97,6 +104,12 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // This is the entry point for the program, so init() cannot have been run before.
     // This code runs with kernel privileges
     unsafe { init(boot_info) };
+
+    println!("Looping");
+
+    //x86_64::instructions::interrupts::disable();
+    x86_64::instructions::interrupts::int3();
+
 
     loop {
         x86_64::instructions::hlt();
