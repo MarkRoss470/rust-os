@@ -57,16 +57,16 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 /// This function may only be called once, and must be called with kernel privileges.
 /// The provided `boot_info` must be valid and correct.
 unsafe fn init(boot_info: &'static mut BootInfo) {
-    init_graphics(boot_info.framebuffer.as_mut().unwrap());
-    
-    println!("Initialised graphics");
-    
     // SAFETY: This function is only called once. If the `physical_memory_offset` field of the BootInfo struct exists,
     // then the bootloader will have mapped all of physical memory at that address.
     let page_table = unsafe { memory::init_cpu(VirtAddr::new(boot_info.physical_memory_offset.into_option().unwrap())) };
     KERNEL_STATE.page_table.init(page_table);
 
     println!("Initialised page table");
+
+    init_graphics(boot_info.framebuffer.as_mut().unwrap());
+    
+    println!("Initialised graphics");
 
     // SAFETY: The provided `boot_info` is correct
     let frame_allocator = unsafe { memory::init_frame_allocator(&boot_info.memory_regions) };
