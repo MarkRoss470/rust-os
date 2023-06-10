@@ -1,12 +1,16 @@
 //! Functionality to manage the Interrupt Descriptor Table, and the PICs which provide hardware interrupts
 
 use alloc::string::String;
-use pc_keyboard::{Keyboard, layouts, ScancodeSet1, HandleControl, DecodedKey};
+use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
 use pic8259::ChainedPics;
 use spin::Mutex;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
-use crate::{graphics::{WRITER, Colour}, println, print, global_state::GlobalState};
+use crate::{
+    global_state::GlobalState,
+    graphics::{Colour, WRITER},
+    print, println,
+};
 
 /// The start of the interrupt range taken up by the first PIC.
 /// 32 is chosen because it is the first free interrupt slot after the 32 CPU exceptions.
@@ -32,15 +36,13 @@ pub unsafe fn init() {
     idt.breakpoint.set_handler_fn(breakpoint_handler);
     idt.page_fault.set_handler_fn(page_fault_handler);
     idt.invalid_opcode.set_handler_fn(invalid_opcode);
-    
+
     idt.double_fault.set_handler_fn(double_fault_handler);
 
     // Timer interrupt
-    idt[InterruptIndex::Timer.as_usize()]
-        .set_handler_fn(timer_interrupt_handler);
+    idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
     // Keyboard interrupt
-    idt[InterruptIndex::Keyboard.as_usize()]
-        .set_handler_fn(keyboard_handler);
+    idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_handler);
 
     // SAFETY: this is the only place this static is accessed, and it may only be accessed once.
     unsafe {
@@ -48,8 +50,11 @@ pub unsafe fn init() {
         IDT.as_ref().unwrap().load();
     }
 
-    KEYBOARD.init(Keyboard::new(ScancodeSet1::new(), layouts::Us104Key, HandleControl::Ignore));
-
+    KEYBOARD.init(Keyboard::new(
+        ScancodeSet1::new(),
+        layouts::Us104Key,
+        HandleControl::Ignore,
+    ));
 }
 
 /// # Safety
@@ -93,8 +98,14 @@ unsafe fn end_interrupt() {
 }
 
 /// The interrupt handler which is called by a cpu `int3` breakpoint instruction
-extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
-    WRITER.lock().set_colour(Colour::BLUE);
+extern "x86-interrupt" fn breakpoint_handler(_stack_frame: InterruptStackFrame) {
+    if let Some(mut lock) = WRITER.try_lock() {
+        lock.set_colour(Colour::BLUE);
+    }
+    println!("BREAKPOINT");
+    if let Some(mut lock) = WRITER.try_lock() {
+        lock.set_colour(Colour::WHITE);
+    }
 }
 
 /// The interrupt handler which is called when a page fault occurs,
@@ -105,7 +116,9 @@ extern "x86-interrupt" fn page_fault_handler(
 ) {
     use x86_64::registers::control::Cr2;
 
-    WRITER.lock().set_colour(Colour::RED);
+    if let Some(mut lock) = WRITER.try_lock() {
+        lock.set_colour(Colour::RED);
+    }
 
     println!("EXCEPTION: PAGE FAULT");
     println!("Accessed Address: {:?}", Cr2::read());
@@ -170,7 +183,9 @@ extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) -> ! {
-    WRITER.lock().set_colour(Colour::RED);
+    if let Some(mut lock) = WRITER.try_lock() {
+        lock.set_colour(Colour::RED);
+    }
 
     println!("Error code: {}", error_code);
     panic!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
