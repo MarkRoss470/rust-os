@@ -140,8 +140,9 @@ unsafe fn align_next(
 ) -> Result<&'static mut ListNode, &'static mut ListNode> {
     let current_allocation_start = node.get_allocation_start() as usize;
     let aligned_start = align_up(current_allocation_start, align);
+    let allocation_end = node.get_allocation_end() as usize;
 
-    let aligned_size = match (node.get_allocation_end() as usize).checked_sub(aligned_start) {
+    let aligned_size = match allocation_end.checked_sub(aligned_start) {
         None => return Err(node),
         Some(aligned_size) => aligned_size,
     };
@@ -182,7 +183,7 @@ unsafe fn align_next(
     };
 
     // If allocating `size` bytes into this allocation would leave a lot of unused space, split the node into two
-    if aligned_size > size + ListNode::ALIGN + 8 {
+    if aligned_size > size + ListNode::OFFSET + 8 {
         let new_node_ptr =
             align_up(node.get_allocation_start() as usize + size, ListNode::ALIGN) as *mut ListNode;
 
@@ -190,6 +191,13 @@ unsafe fn align_next(
         // This preserves the ordering of the list
         let next_node = node.next.take();
         
+        let allocation_end = node.get_allocation_end() as usize;
+        
+        if let Some(n) = &next_node {
+            debug_assert!(*n as *const ListNode as usize >= allocation_end);
+        }
+
+
         // SAFETY:
         // This size is always smaller than the previous size, so the memory is mapped.
         // It is unused as it only extends up to the new node, not past it.
@@ -204,7 +212,7 @@ unsafe fn align_next(
             core::ptr::write(
                 new_node_ptr,
                 ListNode::new(
-                    node.get_allocation_end() as usize - new_node_ptr as usize,
+                    allocation_end - new_node_ptr.offset(1) as usize,
                     false,
                     next_node,
                 ),
@@ -212,7 +220,13 @@ unsafe fn align_next(
         }
 
         // SAFETY: This points to a valid object because it was just written to.
-        node.next = Some(unsafe { &mut *new_node_ptr });
+        let new_node = unsafe { &mut *new_node_ptr };
+
+        debug_assert!(node.get_size() >= size);
+        debug_assert_eq!(node.get_allocation_start().align_offset(align), 0);
+        debug_assert_eq!(new_node.get_allocation_end() as usize, allocation_end);
+
+        node.next = Some(new_node);
     }
 
     Ok(node)

@@ -29,6 +29,9 @@ impl ListNode {
 
     /// Construct a new [`ListNode`] with the given state.
     pub fn new(size: usize, allocated: bool, next: Option<&'static mut ListNode>) -> Self {
+        debug_assert_ne!(size, 0);
+        debug_assert!(size < 100_000);
+
         Self {
             size,
             allocated,
@@ -44,8 +47,11 @@ impl ListNode {
     /// # Safety:
     /// `size` bytes after the [`ListNode`] must be mapped and unused.
     pub unsafe fn set_size(&mut self, size: usize) {
-        if self.allocated && size < self.size {
-            panic!("Tried to decrease size of allocated node");
+        debug_assert_ne!(size, 0);
+        debug_assert!(size < 100_000);
+
+        if size == 0 {
+            panic!("Tried to set size to 0");
         }
         self.size = size;
     }
@@ -73,5 +79,28 @@ impl ListNode {
         // as they are the start and end pointers of the same allocation
         // Computed offset cannot overflow due to the check above, and that the size of `u8` is 1 byte
         unsafe { self.get_allocation_start().offset(offset) }
+    }
+
+    /// Checks that this node and all nodes after it have a reasonable value of `size`
+    /// and the correct relationship to their next node 
+    #[allow(dead_code)]
+    pub fn check(&self) {
+        // SAFETY: no references exist to list nodes
+        let mut current_node = self;
+        loop {
+            // Check that `size` is non-zero and less than 100kB
+            // This check might give false positives, but allocations that large need a better allocator anyway
+            assert_ne!(current_node.size, 0);
+            assert!(current_node.size < 100_000);
+
+            match &current_node.next {
+                None => return,
+                Some(next_node) => {
+                    // Check that this node's allocation ends before the next node
+                    assert!((current_node.get_allocation_end() as usize) <= *next_node as *const ListNode as usize);
+                    current_node = next_node
+                },
+            }
+        }
     }
 }
