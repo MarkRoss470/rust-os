@@ -61,16 +61,24 @@ fn main() {
         .create_disk_image(&uefi_path)
         .unwrap();
 
-    // std::process::Command::new("qemu-system-x86_64")
-    //     .arg("-drive")
-    //     .arg(format!("format=raw,file={}", bios_path.to_str().unwrap()))
-    //     .arg("-serial")
-    //     .arg("stdio") // Redirect serial to stdout
-    //     .arg("-s").arg("-S")
-    //     .spawn()
-    //     .unwrap()
-    //     .wait()
-    //     .unwrap();
+    for arg in std::env::args().skip(1) {
+        if arg == "--release" {
+            cargo_process.arg("--release");
+        }
+    }
+
+    if std::env::args().skip(1).any(|a| a == "--run") {
+        std::process::Command::new("qemu-system-x86_64")
+            .arg("-drive")
+            .arg(format!("format=raw,file={}", bios_path.to_str().unwrap()))
+            .arg("-serial")
+            .arg("stdio") // Redirect serial to stdout
+            .spawn()
+            .unwrap()
+            .wait()
+            .unwrap();
+    }
+
 
     println!("{}", bios_path.to_str().unwrap());
 }
