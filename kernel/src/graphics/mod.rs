@@ -3,7 +3,6 @@
 use core::fmt;
 
 use bootloader_api::info::{FrameBuffer, FrameBufferInfo, PixelFormat};
-use volatile::Volatile;
 
 use crate::{global_state::GlobalState, serial_println};
 
@@ -34,7 +33,7 @@ impl Colour {
 struct FrameBufferController {
     info: FrameBufferInfo,
 
-    buffer: &'static mut [Volatile<u8>],
+    buffer: &'static mut [u8],
 }
 
 impl FrameBufferController {
@@ -50,9 +49,9 @@ impl FrameBufferController {
         );
 
         let pixel_start = (y * self.info.stride + x) * self.info.bytes_per_pixel;
-        self.buffer[pixel_start].write(colour.blue);
-        self.buffer[pixel_start + 1].write(colour.green);
-        self.buffer[pixel_start + 2].write(colour.red);
+        self.buffer[pixel_start] = colour.blue;
+        self.buffer[pixel_start + 1] = colour.green;
+        self.buffer[pixel_start + 2] = colour.red;
 
         Ok(())
     }
@@ -139,11 +138,7 @@ pub static WRITER: GlobalState<Writer> = GlobalState::new();
 pub fn init_graphics(framebuffer: &'static mut FrameBuffer) {
     let info = framebuffer.info();
 
-    // SAFETY: the buffers will have the same length in bytes
-    // `Volatile` is `#[repr(transparent)]` so there is no layout difference to consider
-    let buffer = unsafe { core::mem::transmute(framebuffer.buffer_mut()) };
-
-    let mut buffer = FrameBufferController { info, buffer };
+    let mut buffer = FrameBufferController { info, buffer: framebuffer.buffer_mut() };
 
     buffer.clear(Colour::BLACK);
 

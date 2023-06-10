@@ -48,7 +48,7 @@ pub unsafe fn init() {
         IDT.as_ref().unwrap().load();
     }
 
-    KEYBOARD.init(Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore));
+    KEYBOARD.init(Keyboard::new(ScancodeSet1::new(), layouts::Us104Key, HandleControl::Ignore));
 
 }
 
