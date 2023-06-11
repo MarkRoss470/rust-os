@@ -2,7 +2,7 @@
 
 mod font_const;
 
-use crate::{global_state::GlobalState, println};
+use crate::{global_state::GlobalState};
 use bootloader_api::info::{FrameBuffer, FrameBufferInfo, PixelFormat};
 use core::fmt;
 
@@ -189,6 +189,20 @@ impl Writer {
     /// Sets the [`colour`][Writer::colour] of the [`Writer`]
     pub fn set_colour(&mut self, colour: Colour) {
         self.colour = colour;
+    }
+
+    pub fn clear(&mut self) {
+        self.buffer.clear(Colour::BLACK);
+    }
+
+    pub fn clear_with(&mut self, pixel_fn: impl Fn(usize, usize, usize, usize) -> Colour) {
+        let width = self.buffer.info.width;
+        let height = self.buffer.info.height;
+        for y in 0..height {
+            for x in 0..width {
+                self.buffer.write_pixel(x, y, pixel_fn(x, y, width, height));
+            }
+        }
     }
 }
 

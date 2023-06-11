@@ -22,21 +22,27 @@
 // Use the std alloc crate for heap allocation
 extern crate alloc;
 
+use alloc::{string::String, vec::Vec};
 use bootloader_api::{BootInfo, BootloaderConfig};
+use graphics::{Colour, WRITER};
 use x86_64::VirtAddr;
 
 #[macro_use]
 mod serial;
 
 mod global_state;
+mod graphics;
+pub mod input;
 mod memory;
 #[cfg(test)]
 mod tests;
-mod graphics;
 
 use global_state::*;
 
-use crate::graphics::init_graphics;
+use crate::{
+    graphics::init_graphics,
+    input::{init_keybuffer, pop_key},
+};
 
 /// This function is called on panic.
 #[cfg(not(test))]
@@ -59,13 +65,17 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 unsafe fn init(boot_info: &'static mut BootInfo) {
     // SAFETY: This function is only called once. If the `physical_memory_offset` field of the BootInfo struct exists,
     // then the bootloader will have mapped all of physical memory at that address.
-    let page_table = unsafe { memory::init_cpu(VirtAddr::new(boot_info.physical_memory_offset.into_option().unwrap())) };
+    let page_table = unsafe {
+        memory::init_cpu(VirtAddr::new(
+            boot_info.physical_memory_offset.into_option().unwrap(),
+        ))
+    };
     KERNEL_STATE.page_table.init(page_table);
 
     println!("Initialised page table");
 
     init_graphics(boot_info.framebuffer.as_mut().unwrap());
-    
+
     println!("Initialised graphics");
 
     // SAFETY: The provided `boot_info` is correct
@@ -78,6 +88,8 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
     unsafe { memory::allocator::init_heap().expect("Initialising the heap should have succeeded") }
 
     println!("Initialised heap");
+
+    init_keybuffer();
 
     println!("Finished initialising kernel");
 }
@@ -110,8 +122,40 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     //x86_64::instructions::interrupts::disable();
     x86_64::instructions::interrupts::int3();
 
+    let mut input = String::new();
 
     loop {
         x86_64::instructions::hlt();
+
+        if let Some(key) = pop_key() {
+            match key {
+                pc_keyboard::DecodedKey::Unicode(c) => {
+                    print!("{c}");
+                    if c == '\n' {
+                        let commands: Vec<_> = input.split(' ').filter(|a| !a.is_empty()).collect();
+                        if let Some(c) = commands.first() {
+                            if *c == "echo" {
+                                echo(&commands[1..]);
+                            } else {
+                                println!("Unknown command '{}'", c);
+                            }
+                        }
+
+                        input.clear();
+                    } else {
+                        input.push(c);
+                    }
+                }
+                pc_keyboard::DecodedKey::RawKey(_) => {}
+            }
+        }
     }
+}
+
+/// The `echo` command - prints its arguments separated by a space
+fn echo(args: &[&str]) {
+    for arg in args {
+        print!("{arg} ");
+    }
+    println!();
 }

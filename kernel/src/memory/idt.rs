@@ -1,6 +1,7 @@
 //! Functionality to manage the Interrupt Descriptor Table, and the PICs which provide hardware interrupts
 
-use alloc::string::String;
+use conquer_once::spin::OnceCell;
+use crossbeam_queue::ArrayQueue;
 use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
 use pic8259::ChainedPics;
 use spin::Mutex;
@@ -9,7 +10,7 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 use crate::{
     global_state::GlobalState,
     graphics::{Colour, WRITER},
-    print, println,
+    print, println, input::push_key,
 };
 
 /// The start of the interrupt range taken up by the first PIC.
@@ -129,8 +130,8 @@ extern "x86-interrupt" fn page_fault_handler(
     }
 }
 
-/// A temporary global [`String`] to test the kernel heap allocator
-static INPUT_STRING: Mutex<String> = Mutex::new(String::new());
+
+
 /// Global variable to store the state of the keyboard
 /// e.g. whether shift is held
 static KEYBOARD: GlobalState<Keyboard<layouts::Us104Key, ScancodeSet1>> = GlobalState::new();
@@ -153,19 +154,7 @@ extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
     // Parse the scancode using the pc-keyboard crate
     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
         if let Some(key) = keyboard.process_keyevent(key_event) {
-            match key {
-                DecodedKey::Unicode(character) => {
-                    print!("{}", character);
-
-                    if character == '\n' {
-                        println!("You typed: {}", *INPUT_STRING.lock());
-                        *INPUT_STRING.lock() = String::new();
-                    }
-
-                    INPUT_STRING.lock().push(character);
-                }
-                DecodedKey::RawKey(key) => print!("{:?}", key),
-            }
+            push_key(key);
         }
     }
 
