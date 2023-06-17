@@ -1,8 +1,6 @@
 //! Functionality to manage the Interrupt Descriptor Table, and the PICs which provide hardware interrupts
 
-use conquer_once::spin::OnceCell;
-use crossbeam_queue::ArrayQueue;
-use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
+use pc_keyboard::{layouts, HandleControl, Keyboard, ScancodeSet1};
 use pic8259::ChainedPics;
 use spin::Mutex;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
@@ -10,7 +8,7 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 use crate::{
     global_state::GlobalState,
     graphics::{Colour, WRITER},
-    print, println, input::push_key,
+    println, input::push_key,
 };
 
 /// The start of the interrupt range taken up by the first PIC.

@@ -24,7 +24,6 @@ extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
 use bootloader_api::{BootInfo, BootloaderConfig};
-use graphics::{Colour, WRITER};
 use x86_64::VirtAddr;
 
 #[macro_use]
@@ -33,7 +32,8 @@ mod serial;
 mod global_state;
 mod graphics;
 pub mod input;
-mod memory;
+mod allocator;
+mod cpu;
 #[cfg(test)]
 mod tests;
 
@@ -66,7 +66,7 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
     // SAFETY: This function is only called once. If the `physical_memory_offset` field of the BootInfo struct exists,
     // then the bootloader will have mapped all of physical memory at that address.
     let page_table = unsafe {
-        memory::init_cpu(VirtAddr::new(
+        cpu::init_cpu(VirtAddr::new(
             boot_info.physical_memory_offset.into_option().unwrap(),
         ))
     };
@@ -79,13 +79,13 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
     println!("Initialised graphics");
 
     // SAFETY: The provided `boot_info` is correct
-    let frame_allocator = unsafe { memory::init_frame_allocator(&boot_info.memory_regions) };
+    let frame_allocator = unsafe { cpu::init_frame_allocator(&boot_info.memory_regions) };
     KERNEL_STATE.frame_allocator.init(frame_allocator);
 
     println!("Initialised frame allocator");
 
     // SAFETY: This function is only called once. The provided `boot_info` is correct, so so are `offset_page_table` and `frame_allocator`
-    unsafe { memory::allocator::init_heap().expect("Initialising the heap should have succeeded") }
+    unsafe { allocator::init_heap().expect("Initialising the heap should have succeeded") }
 
     println!("Initialised heap");
 

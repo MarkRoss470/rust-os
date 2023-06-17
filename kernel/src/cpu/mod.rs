@@ -1,7 +1,7 @@
 //! Types and functions for managing memory and the CPU's state.
 //! This includes managing the GDT and IDT, configuring the PICs, and loading interrupt handlers.
 
-pub mod allocator;
+// pub mod allocator;
 mod frame_allocator;
 mod idt;
 

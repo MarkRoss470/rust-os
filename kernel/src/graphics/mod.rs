@@ -89,6 +89,7 @@ impl FrameBufferController {
 
     /// Draws a rectangle with the top left corner at (`x`, `y`),
     /// with the given `width` and `height`, filled with the given colour
+    #[allow(dead_code)]
     fn draw_rect(
         &mut self,
         x: usize,
@@ -191,18 +192,10 @@ impl Writer {
         self.colour = colour;
     }
 
+    /// Clears the entire framebuffer with the given [`Colour`]
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.buffer.clear(Colour::BLACK);
-    }
-
-    pub fn clear_with(&mut self, pixel_fn: impl Fn(usize, usize, usize, usize) -> Colour) {
-        let width = self.buffer.info.width;
-        let height = self.buffer.info.height;
-        for y in 0..height {
-            for x in 0..width {
-                self.buffer.write_pixel(x, y, pixel_fn(x, y, width, height));
-            }
-        }
     }
 }
 

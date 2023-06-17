@@ -3,10 +3,8 @@
 use spin::{Mutex, MutexGuard};
 use x86_64::structures::paging::OffsetPageTable;
 
-use crate::memory::{
-    allocator::{LinkedListAllocator, ALLOCATOR},
-    BootInfoFrameAllocator,
-};
+use crate::allocator::{LinkedListAllocator, ALLOCATOR};
+use crate::cpu::BootInfoFrameAllocator;
 
 /// A piece of global state.
 #[derive(Debug)]
@@ -32,7 +30,7 @@ impl<T> GlobalState<T> {
 
     /// Tries to gets whether the [`GlobalState`] object has been initialised or not
     pub fn try_is_init(&self) -> Option<bool> {
-        self.0.try_lock().map(|lock|lock.is_some())
+        self.0.try_lock().map(|lock| lock.is_some())
     }
 
     /// Lock the contained [`Mutex`], wrapped in a [`GlobalStateLock`]
@@ -42,7 +40,7 @@ impl<T> GlobalState<T> {
 
     /// Tries to lock the contained [`Mutex`]
     pub fn try_lock(&self) -> Option<GlobalStateLock<T>> {
-        self.0.try_lock().map(|lock|GlobalStateLock(lock))
+        self.0.try_lock().map(|lock| GlobalStateLock(lock))
     }
 }
 
