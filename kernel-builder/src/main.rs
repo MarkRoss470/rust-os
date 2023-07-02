@@ -4,6 +4,26 @@ use std::{
     process::{Command, Stdio},
 };
 
+use clap::Parser;
+
+/// Struct to store the command line args parsed by clap
+#[derive(Parser, Debug)]
+#[command(author="Mark Ross", version="0.1", about="Compiles and optionally runs the kernel", long_about = None)]
+struct Args {
+    /// Runs the kernel using qemu after compiling it.
+    #[arg(long, action)]
+    run: bool,
+
+    /// Runs the kernel ready for a debugger to attach, with serial output written to the given file.
+    /// Has no effect if not combined with --run
+    #[arg(long)]
+    debug: Option<String>,
+
+    /// Compiles the kernel in release mode.
+    #[arg(long, action)]
+    release: bool,
+}
+
 /// This builder may be invoked with `pwd` = `project-root/kernel-builder` or just `project-root`.
 /// This function computes the relative path to the `kernel` crate for either of these options.
 fn kernel_dir() -> &'static str {
@@ -17,23 +37,52 @@ fn kernel_dir() -> &'static str {
 /// Prepares a cargo command in the given directory, with the given subcommand
 /// (e.g. if `subcommand` is `build`, `cargo build` will be run).
 /// If `--release` is anywhere in this process's arguments, it will also be added to the subprocess's arguments.
-fn prepare_cargo_command(dir: &str, subcommand: &str) -> Command {
+fn prepare_cargo_command(args: &Args, dir: &str, subcommand: &str) -> Command {
     // Spawn a new cargo process to compile the kernel
     let mut cargo_process = std::process::Command::new("cargo");
     cargo_process.arg(subcommand).current_dir(dir);
 
-    for arg in std::env::args().skip(1) {
-        if arg == "--release" {
-            cargo_process.arg("--release");
-        }
+    if args.release {
+        cargo_process.arg("--release");
     }
 
     cargo_process
 }
+/// Prepares a call to the `qemu-system-x86-64` command.
+///
+/// # Arguments
+/// * `file`: the file path to load as a disk image
+/// * `test`: whether to run the kernel in test mode.
+/// If `true`, a device will be added to allow the kernel to exit without usual power management, and no window will be shown.
+fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
+    let mut c = std::process::Command::new("qemu-system-x86_64");
+    c.arg("-drive").arg(format!("format=raw,file={}", file)); // Load the specified image
+
+    if test {
+        c.arg("-device")
+            .arg("isa-debug-exit,iobase=0xf4,iosize=0x04")
+            .arg("-display")
+            .arg("none");
+    }
+
+    if let Some(ref file) = args.debug {
+        c.arg("-s") // Listen for debugger on port 1234
+            .arg("-S") // Don't start until debugger gives command to
+            .arg("-daemonize") // Run in background
+            .arg("-serial")
+            .arg(format!("file:{file}"));
+    } else {
+        c.arg("-serial").arg("stdio"); // Redirect serial to stdout. This
+    }
+
+    c
+}
 
 fn main() {
+    let args = &Args::parse();
+
     let kernel_dir = kernel_dir();
-    let mut cargo_process = prepare_cargo_command(kernel_dir, "build");
+    let mut cargo_process = prepare_cargo_command(args, kernel_dir, "build");
 
     let exit_code = cargo_process
         .spawn()
@@ -61,24 +110,17 @@ fn main() {
         .create_disk_image(&uefi_path)
         .unwrap();
 
-    for arg in std::env::args().skip(1) {
-        if arg == "--release" {
-            cargo_process.arg("--release");
-        }
+    if args.release {
+        cargo_process.arg("--release");
     }
 
-    if std::env::args().skip(1).any(|a| a == "--run") {
-        std::process::Command::new("qemu-system-x86_64")
-            .arg("-drive")
-            .arg(format!("format=raw,file={}", bios_path.to_str().unwrap()))
-            .arg("-serial")
-            .arg("stdio") // Redirect serial to stdout
+    if args.run {
+        prepare_qemu_command(args, bios_path.to_str().unwrap(), false)
             .spawn()
             .unwrap()
             .wait()
             .unwrap();
     }
-
 
     println!("{}", bios_path.to_str().unwrap());
 }
@@ -86,10 +128,12 @@ fn main() {
 /// Compiles the kernel in test mode and launches it
 #[test]
 fn run_tests() {
+    let args = &Args::parse();
+
     let kernel_dir = kernel_dir();
 
     // Create a new cargo process to compile the kernel for tests
-    let mut cargo_process = prepare_cargo_command(kernel_dir, "test");
+    let mut cargo_process = prepare_cargo_command(args, kernel_dir, "test");
     cargo_process.arg("--no-run").stderr(Stdio::piped());
 
     let mut cargo_process = cargo_process.spawn().unwrap();
@@ -128,22 +172,13 @@ fn run_tests() {
         .create_disk_image(&bios_path)
         .unwrap();
 
-    // Launch qemu running the test kernel
-    let qemu_exit_code = std::process::Command::new("qemu-system-x86_64")
-        .arg("-drive")
-        .arg(format!("format=raw,file={}", bios_path.to_str().unwrap())) // Load test image
-        .arg("-device")
-        .arg("isa-debug-exit,iobase=0xf4,iosize=0x04") // Add fake device to allow exit with a status code
-        .arg("-serial")
-        .arg("stdio") // Redirect serial to stdout
-        .arg("-display")
-        .arg("none") // Don't display a window
+    let qemu_exit_code = prepare_qemu_command(args, bios_path.to_str().unwrap(), true)
         .spawn()
-        .unwrap() // Spawn the process
+        .unwrap()
         .wait()
-        .unwrap() // Wait for the process to exit
+        .unwrap()
         .code()
-        .unwrap(); // Get the exit code
+        .unwrap();
 
     // Check that the test runner exited successfully
     // TODO: investigate why this isn't the same number as defined in the kernel
