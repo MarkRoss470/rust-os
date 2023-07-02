@@ -1,7 +1,6 @@
 use std::{
-    io::Read,
-    path::PathBuf,
-    process::{Command, Stdio},
+path::PathBuf,
+    process::Command,
 };
 
 use clap::Parser;
@@ -56,7 +55,10 @@ fn prepare_cargo_command(args: &Args, dir: &str, subcommand: &str) -> Command {
 /// If `true`, a device will be added to allow the kernel to exit without usual power management, and no window will be shown.
 fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
     let mut c = std::process::Command::new("qemu-system-x86_64");
-    c.arg("-drive").arg(format!("format=raw,file={}", file)); // Load the specified image
+
+    c.arg("-drive").arg(format!("if=none,format=raw,id=os-drive,file={}", file)); // Load the specified image as a drive
+    c.arg("-device").arg("qemu-xhci"); // Add an XHCI USB controller
+    c.arg("-device").arg("usb-storage,drive=os-drive"); // Add the kernel image as a USB storage device
 
     if test {
         c.arg("-device")
@@ -70,9 +72,9 @@ fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
             .arg("-S") // Don't start until debugger gives command to
             .arg("-daemonize") // Run in background
             .arg("-serial")
-            .arg(format!("file:{file}"));
+            .arg(format!("file:{file}")); // Redirect serial to given file
     } else {
-        c.arg("-serial").arg("stdio"); // Redirect serial to stdout. This
+        c.arg("-serial").arg("stdio"); // Redirect serial to stdout
     }
 
     c
@@ -128,6 +130,9 @@ fn main() {
 /// Compiles the kernel in test mode and launches it
 #[test]
 fn run_tests() {
+    use std::process::Stdio;
+    use std::io::Read;
+
     let args = &Args::parse();
 
     let kernel_dir = kernel_dir();
