@@ -100,8 +100,9 @@ fn main() {
     // Check that cargo exited successfully
     assert_eq!(exit_code, 0);
 
-    let out_dir = PathBuf::from(kernel_dir).join("target/x86_64-os/debug");
-    let kernel = out_dir.join("os");
+    let kernel = PathBuf::from(kernel_dir).join("target/x86_64-os/debug/os");
+
+    let out_dir = PathBuf::from(kernel_dir).join("images");
 
     // create a BIOS disk image
     let bios_path = out_dir.join("bios.img");
