@@ -1,7 +1,4 @@
-use std::{
-path::PathBuf,
-    process::Command,
-};
+use std::{path::PathBuf, process::Command, ffi::{OsString, OsStr}};
 
 use clap::Parser;
 
@@ -82,6 +79,12 @@ fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
 
 fn main() {
     let args = &Args::parse();
+
+    for (var, _) in std::env::vars() {
+        if var.contains("CARGO") || var.contains("RUST") {
+            std::env::remove_var(var);
+        }
+    }
 
     let kernel_dir = kernel_dir();
     let mut cargo_process = prepare_cargo_command(args, kernel_dir, "build");
