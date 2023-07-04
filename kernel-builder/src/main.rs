@@ -1,4 +1,8 @@
-use std::{path::PathBuf, process::Command, ffi::{OsString, OsStr}};
+use std::{
+    ffi::{OsStr, OsString},
+    path::PathBuf,
+    process::Command,
+};
 
 use clap::Parser;
 
@@ -53,7 +57,8 @@ fn prepare_cargo_command(args: &Args, dir: &str, subcommand: &str) -> Command {
 fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
     let mut c = std::process::Command::new("qemu-system-x86_64");
 
-    c.arg("-drive").arg(format!("if=none,format=raw,id=os-drive,file={}", file)); // Load the specified image as a drive
+    c.arg("-drive")
+        .arg(format!("if=none,format=raw,id=os-drive,file={}", file)); // Load the specified image as a drive
     c.arg("-device").arg("qemu-xhci"); // Add an XHCI USB controller
     c.arg("-device").arg("usb-storage,drive=os-drive"); // Add the kernel image as a USB storage device
 
@@ -134,8 +139,8 @@ fn main() {
 /// Compiles the kernel in test mode and launches it
 #[test]
 fn run_tests() {
-    use std::process::Stdio;
     use std::io::Read;
+    use std::process::Stdio;
 
     let args = &Args::parse();
 
