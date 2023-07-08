@@ -1,7 +1,7 @@
 use std::{
     ffi::{OsStr, OsString},
     path::PathBuf,
-    process::Command,
+    process::Command, fs,
 };
 
 use clap::Parser;
@@ -15,13 +15,19 @@ struct Args {
     run: bool,
 
     /// Runs the kernel ready for a debugger to attach, with serial output written to the given file.
-    /// Has no effect if not combined with --run
+    /// Has no effect if not combined with --run.
     #[arg(long)]
     debug: Option<String>,
 
     /// Compiles the kernel in release mode.
     #[arg(long, action)]
     release: bool,
+
+    /// Add an argument when running qemu.
+    /// Has no effect if not combined with --run.
+    #[arg(long)]
+    qemu_device: Vec<String>
+
 }
 
 /// This builder may be invoked with `pwd` = `project-root/kernel-builder` or just `project-root`.
@@ -79,6 +85,11 @@ fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
         c.arg("-serial").arg("stdio"); // Redirect serial to stdout
     }
 
+    // Pass along other qemu args
+    for arg in &args.qemu_device {
+        c.arg("-device").arg(arg);
+    }
+
     c
 }
 
@@ -108,6 +119,8 @@ fn main() {
     let kernel = PathBuf::from(kernel_dir).join("target/x86_64-os/debug/os");
 
     let out_dir = PathBuf::from(kernel_dir).join("images");
+    // Create the directory to put kernel images, if it doesn't exist.
+    fs::create_dir_all(&out_dir);
 
     // create a BIOS disk image
     let bios_path = out_dir.join("bios.img");
