@@ -1,4 +1,8 @@
 kernel/target/
 kernel-builder/target/
-.vscode/
 kernel/images/
+
+kernel/.vscode/log.txt
+kernel/.vscode/settings.json
+kernel-builder/.vscode
+.vscode/settings.json
