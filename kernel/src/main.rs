@@ -19,6 +19,9 @@
 )]
 #![deny(clippy::undocumented_unsafe_blocks)]
 
+#[macro_use]
+extern crate bitfield_struct;
+
 // Use the std alloc crate for heap allocation
 extern crate alloc;
 
@@ -34,15 +37,14 @@ mod graphics;
 pub mod input;
 mod allocator;
 mod cpu;
+mod pci;
 #[cfg(test)]
 mod tests;
 
 use global_state::*;
-
-use crate::{
-    graphics::init_graphics,
-    input::{init_keybuffer, pop_key},
-};
+use input::{init_keybuffer, pop_key};
+use pci::lspci;
+use graphics::init_graphics;
 
 /// This function is called on panic.
 #[cfg(not(test))]
@@ -89,6 +91,9 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
 
     println!("Initialised heap");
 
+    // SAFETY: This function is only called once
+    unsafe { pci::init() }
+
     init_keybuffer();
 
     println!("Finished initialising kernel");
@@ -121,6 +126,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     //x86_64::instructions::interrupts::disable();
     x86_64::instructions::interrupts::int3();
+
+    lspci();
 
     let mut input = String::new();
 
