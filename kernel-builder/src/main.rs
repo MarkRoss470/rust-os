@@ -23,8 +23,10 @@ struct Args {
     #[arg(long, action)]
     release: bool,
 
-    /// Add an argument when running qemu.
-    /// Has no effect if not combined with --run.
+    /// Adds a device when running qemu.
+    /// Has no effect if not combined with --run.  
+    /// 
+    /// Example usage: `kernel-builder --run --qemu-device "pci-bridge,id=bridge0,chassis_nr=1"`
     #[arg(long)]
     qemu_device: Vec<String>
 
