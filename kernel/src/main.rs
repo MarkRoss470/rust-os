@@ -141,10 +141,10 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                     if c == '\n' {
                         let commands: Vec<_> = input.split(' ').filter(|a| !a.is_empty()).collect();
                         if let Some(c) = commands.first() {
-                            if *c == "echo" {
-                                echo(&commands[1..]);
-                            } else {
-                                println!("Unknown command '{}'", c);
+                            match *c {
+                                "echo" => echo(&commands[1..]),
+                                "lspci" => lspci(),
+                                _ => println!("Unknown command {c}"),
                             }
                         }
 
