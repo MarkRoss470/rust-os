@@ -4,7 +4,8 @@ use pc_keyboard::DecodedKey;
 
 use crate::println;
 
-/// A temporary global [`String`] to test the kernel heap allocator
+/// A buffer of keyboard inputs. An input will be added to this buffer when a key is pressed, 
+/// and removed when it is read by an input handler.
 static INPUT_BUFFER: OnceCell<ArrayQueue<DecodedKey>> = OnceCell::uninit();
 
 pub fn init_keybuffer() {
