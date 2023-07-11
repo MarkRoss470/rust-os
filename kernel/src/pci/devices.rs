@@ -2,14 +2,29 @@
 //! [device][PciDevice], [function][PciFunction], and [register][PciRegister]
 
 use core::fmt::Display;
-use x86_64::instructions::port::Port;
+use spin::Mutex;
+use x86_64::instructions::port::{Port, PortWriteOnly};
 
-use super::{registers::PciHeader, classcodes::InvalidValueError};
+use super::{classcodes::InvalidValueError, registers::PciHeader};
 
 /// The port number to write the address of a [`PciRegister`] to read or write its data
 const CONFIG_ADDRESS: u16 = 0xCF8;
 /// The port number to read or write data to get/set a [`PciRegister`]
 const CONFIG_DATA: u16 = 0xCFC;
+
+/// A struct to combine the two PCI ports
+struct PciPorts {
+    /// The port to write the configuration space address to
+    address: PortWriteOnly<u32>,
+    /// The port to read/write data to
+    data: Port<u32>,
+}
+
+/// A global lock around the PCI configuration space ports
+static PORTS: Mutex<PciPorts> = Mutex::new(PciPorts {
+    address: PortWriteOnly::new(CONFIG_ADDRESS),
+    data: Port::new(CONFIG_DATA),
+});
 
 /// An error which can occur when constructing a PCI address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,12 +146,14 @@ impl PciRegister {
     /// Reads from the [`PciRegister`]
     /// # Safety
     /// This function is unsafe as the read may have side-effects depending on the PCI device in question
-    unsafe fn read_u32(self) -> u32 {
+    pub unsafe fn read_u32(&self) -> u32 {
+        let mut ports = PORTS.lock();
+
         // SAFETY:
         // The safety of this operation is the caller's responsibility
         unsafe {
-            Port::new(CONFIG_ADDRESS).write(self.get_address());
-            Port::new(CONFIG_DATA).read()
+            ports.address.write(self.get_address());
+            ports.data.read()
         }
     }
 
@@ -144,12 +161,14 @@ impl PciRegister {
     ///
     /// # Safety
     /// This function is unsafe as the write may have side-effects depending on the PCI device in question
-    unsafe fn write_u32(self, value: u32) {
+    pub unsafe fn write_u32(&mut self, value: u32) {
+        let mut ports = PORTS.lock();
+
         // SAFETY:
         // The safety of this operation is the caller's responsibility
         unsafe {
-            Port::new(CONFIG_ADDRESS).write(self.get_address());
-            Port::new(CONFIG_DATA).write(value)
+            ports.address.write(self.get_address());
+            ports.data.write(value);
         }
     }
 }
@@ -208,7 +227,6 @@ impl PciFunction {
         }
 
         PciHeader::from_registers(registers)
-
     }
 }
 
