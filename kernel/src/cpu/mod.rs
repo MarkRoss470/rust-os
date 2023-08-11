@@ -12,8 +12,10 @@ pub use frame_allocator::BootInfoFrameAllocator;
 
 use x86_64::structures::paging::OffsetPageTable;
 use x86_64::structures::paging::PageTable;
+use x86_64::PhysAddr;
 use x86_64::VirtAddr;
 
+use crate::global_state::KERNEL_STATE;
 use crate::println;
 
 /// Returns a mutable reference to the active level 4 table.
@@ -33,6 +35,17 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
     // SAFETY:
     // This function is unsafe and may only be called once, so a mutable static reference can be created
     unsafe { &mut *page_table_ptr }
+}
+
+#[derive(Debug)]
+pub struct PhysicalMemoryAccessor {
+    memory_offset: VirtAddr,
+}
+
+impl PhysicalMemoryAccessor {
+    pub unsafe fn get_addr(&self, addr: PhysAddr) -> VirtAddr {
+        self.memory_offset + addr.as_u64()
+    }
 }
 
 /// This function:
@@ -63,6 +76,12 @@ pub unsafe fn init_cpu(physical_memory_offset: VirtAddr) -> OffsetPageTable<'sta
     // SAFETY:
     // All of physical memory is mapped at the given address as a safety condition of init_mem
     let level_4_table = unsafe { active_level_4_table(physical_memory_offset) };
+    
+    KERNEL_STATE
+        .physical_memory_accessor
+        .init(PhysicalMemoryAccessor {
+            memory_offset: physical_memory_offset,
+        });
 
     // SAFETY:
     // The given level_4_table is correct as long as `physical_memory_offset` is correct,
@@ -124,7 +143,7 @@ fn test_floats() {
     let mut a = 0.0f32;
 
     for i in 0..200 {
-        a += i as f32; 
+        a += i as f32;
     }
 
     assert_eq!(a, 19900.0);

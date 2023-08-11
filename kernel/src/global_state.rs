@@ -4,7 +4,7 @@ use spin::{Mutex, MutexGuard};
 use x86_64::structures::paging::OffsetPageTable;
 
 use crate::allocator::{LinkedListAllocator, ALLOCATOR};
-use crate::cpu::BootInfoFrameAllocator;
+use crate::cpu::{BootInfoFrameAllocator, PhysicalMemoryAccessor};
 
 /// A piece of global state.
 #[derive(Debug)]
@@ -72,6 +72,8 @@ pub struct KernelState {
     pub frame_allocator: GlobalState<KernelFrameAllocator>,
     /// Struct which allocates the kernel heap
     pub heap_allocator: &'static GlobalState<KernelHeapAllocator>,
+    /// Helper struct to access physical memory locations
+    pub physical_memory_accessor: GlobalState<PhysicalMemoryAccessor>,
 }
 
 /// The global kernel state
@@ -79,6 +81,7 @@ pub static KERNEL_STATE: KernelState = KernelState {
     page_table: GlobalState::new(),
     frame_allocator: GlobalState::new(),
     heap_allocator: ALLOCATOR.get(),
+    physical_memory_accessor: GlobalState::new(),
 };
 
 /// A type alias for the kernel's page table. This makes it easier to change the exact type in future.
