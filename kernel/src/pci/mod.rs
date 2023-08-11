@@ -1,5 +1,6 @@
 //! Functionality for reading and driving the PCI bus
 
+mod bar;
 mod classcodes;
 mod devices;
 mod registers;

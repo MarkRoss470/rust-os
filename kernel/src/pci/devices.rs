@@ -3,7 +3,7 @@
 
 use core::fmt::Display;
 use spin::Mutex;
-use x86_64::instructions::port::{Port, PortWriteOnly};
+use x86_64::instructions::port::{self, Port, PortWriteOnly};
 
 use super::{classcodes::InvalidValueError, registers::PciHeader};
 
@@ -86,7 +86,7 @@ impl Display for PciInvalidAddressError {
 //impl Error for PciInvalidAddressError {}
 
 /// The address of a specific 32-bit register of a PCI device
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct PciRegister {
     /// The bus number
     bus: u8,
@@ -161,7 +161,7 @@ impl PciRegister {
     ///
     /// # Safety
     /// This function is unsafe as the write may have side-effects depending on the PCI device in question
-    pub unsafe fn write_u32(&mut self, value: u32) {
+    pub unsafe fn write_u32(&self, value: u32) {
         let mut ports = PORTS.lock();
 
         // SAFETY:
@@ -171,10 +171,47 @@ impl PciRegister {
             ports.data.write(value);
         }
     }
+
+    /// Reads the register's value, writes the given value to the register, reads the register again,
+    /// and then restores the original value.
+    /// This is useful to see how the device responds to a write without changing the underlying data,
+    /// such as when finding the size of a [`Bar`][super::registers::Bar].
+    ///
+    /// # Safety
+    /// This function is unsafe as the accesses may have side-effects depending on the PCI device in question
+    pub unsafe fn write_and_reset(&self, value: u32) -> u32 {
+        let mut ports = PORTS.lock();
+
+        // SAFETY:
+        // The safety of this operation is the caller's responsibility
+        unsafe {
+            ports.address.write(self.get_address());
+            // Save the original value
+            let original_value = ports.data.read();
+            // Write the new value
+            ports.data.write(value);
+            // Read the value again
+            let value_after_write = ports.data.read();
+            // Restore the original value
+            ports.data.write(original_value);
+
+            value_after_write
+        }
+    }
+
+    /// Gets the next register - i.e. the same as this but with [`offset`][PciRegister::offset] 4 bytes greater
+    ///
+    /// Returns [`None`] if this register is the PCI device's last register
+    pub fn next(&self) -> Option<Self> {
+        Some(Self {
+            offset: self.offset.checked_add(4)?,
+            ..*self
+        })
+    }
 }
 
 /// Represents a specific function of a [`PciDevice`]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct PciFunction {
     /// The bus number
     bus: u8,
@@ -226,12 +263,12 @@ impl PciFunction {
             }
         }
 
-        PciHeader::from_registers(registers)
+        PciHeader::from_registers(registers, self)
     }
 }
 
 /// The bus:device address of a PCI device
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct PciDevice {
     /// The bus number
     bus: u8,

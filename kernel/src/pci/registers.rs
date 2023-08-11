@@ -1,6 +1,10 @@
 //! Types for reading values from PCI registers
 
-use super::classcodes::{ClassCode, InvalidValueError};
+use super::{
+    bar::Bar,
+    classcodes::{ClassCode, InvalidValueError},
+    devices::{PciFunction, PciRegister},
+};
 
 /// The vendor:device code of a particular PCI device
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -131,100 +135,6 @@ pub struct CommandRegister {
     _reserved_1: (),
 }
 
-/// The width of the pointer stored in the [`Bar`]
-/// TODO: Get a type-level representation of the fact that 64 bit
-/// BARs take up the space of 2 32 bit BARs
-#[derive(Debug, Clone, Copy)]
-pub enum BarSize {
-    /// The BAR is 32 bits wide 
-    Small = 0,
-    /// The BAR is 64 bits wide. The address is made up of a combination of 2 BARs.
-    Large = 2,
-}
-
-impl BarSize {
-    /// Converts the [`DEVSELTiming`] into bits. Needed for the inclusion of the enum in [`StatusRegister`]
-    const fn into_bits(self) -> u32 {
-        self as _
-    }
-
-    /// Constructs a [`DEVSELTiming`] from bits. Needed for the inclusion of the enum in [`StatusRegister`]
-    const fn from_bits(value: u32) -> Self {
-        match value {
-            0 => Self::Small,
-            2 => Self::Large,
-            _ => panic!("Invalid DEVSEL timing value"),
-        }
-    }
-}
-
-#[bitfield(u32)]
-pub struct MemorySpaceBar {
-    #[bits(1)]
-    _always_0: (),
-
-    /// Whether the [`Bar`] is 32 or 64 bits wide
-    #[bits(2)]
-    pub size: BarSize,
-    pub prefetchable: bool,
-
-    #[bits(28)]
-    base_address: u32,
-}
-
-impl MemorySpaceBar {
-    /// Gets the [`Bar`]'s base address
-    pub fn get_base_address(&self) -> u32 {
-        match self.size() {
-            // The least significant 4 bits are cut off by other fields, so shift up to properly align the address
-            BarSize::Small => self.base_address() << 4,
-            BarSize::Large => todo!("64 bit Bars")
-        }
-    }
-}
-
-#[bitfield(u32)]
-pub struct IOSpaceBar {
-    #[bits(1)]
-    _always_1: (),
-    #[bits(1)]
-    _reserved_0: (),
-
-    #[bits(30)]
-    base_address: u32,
-}
-
-impl IOSpaceBar {
-    /// Gets the [`Bar`]'s base address
-    pub fn get_base_address(&self) -> u32 {
-        // The least significant 2 bits are cut off by other fields, so shift up to properly align the address
-        self.base_address() << 2
-    }
-}
-
-/// A Base Address Representation (BAR) - a pointer to a memory location used by a PCI device
-#[derive(Debug, Clone, Copy)]
-pub enum Bar {
-    /// The BAR is the physical address af a memory region used by the PCI device.
-    /// This means the BAR has to live in physical memory.
-    MemorySpace(MemorySpaceBar),
-    /// The BAR is a port number
-    /// TODO: figure out what's up with these
-    IOSpace (IOSpaceBar),
-}
-
-impl Bar {
-    /// Parses a [`Bar`] from the 32 bit integer which represents it
-    fn new(value: u32) -> Self {
-        // Check the least significant bit to determine which kind of BAR it is
-        if value & 1 == 0 {
-            Self::MemorySpace(MemorySpaceBar::from(value))
-        } else {
-            Self::IOSpace(IOSpaceBar::from(value))
-        }
-    }
-}
-
 /// A PCI interrupt pin. PCI has 4 interrupt pins, which can each be connected to any line on the IO/APIC.
 #[derive(Debug, Clone, Copy)]
 pub enum InterruptPin {
@@ -249,7 +159,10 @@ impl InterruptPin {
             2 => Ok(Self::IntB),
             3 => Ok(Self::IntC),
             4 => Ok(Self::IntD),
-            _ => Err(InvalidValueError { value: number, field: "Interrupt pin number"})
+            _ => Err(InvalidValueError {
+                value: number,
+                field: "Interrupt pin number",
+            }),
         }
     }
 }
@@ -257,18 +170,7 @@ impl InterruptPin {
 /// The additional headers of a general PCI device (header type 0x00)
 #[derive(Debug, Clone, Copy)]
 pub struct PciGeneralDeviceHeader {
-    /// The 1st base address register (index 0)
-    pub bar_0: Bar,
-    /// The 2nd base address register (index 1)
-    pub bar_1: Bar,
-    /// The 3rd base address register (index 2)
-    pub bar_2: Bar,
-    /// The 4th base address register (index 3)
-    pub bar_3: Bar,
-    /// The 5th base address register (index 4)
-    pub bar_4: Bar,
-    /// The 6th base address register (index 5)
-    pub bar_5: Bar,
+    function: PciFunction,
 
     /// Points to the Card Information Structure.
     pub cardbus_cis_pointer: u32,
@@ -294,11 +196,10 @@ impl PciGeneralDeviceHeader {
     /// Constructs a [`PciGeneralDeviceHeader`] from the PCI registers which make it up.
     /// Takes all registers including registers common to all devices,
     /// because the value of these registers can affect the parsing of the general device specific registers.
-    fn from_registers(registers: [u32; 0x11]) -> Result<Self, InvalidValueError> {
-        let [bar_0, bar_1, bar_2, bar_3, bar_4, bar_5] = registers[4..=9] else {
-            unreachable!()
-        };
-
+    fn from_registers(
+        registers: [u32; 0x11],
+        function: &PciFunction,
+    ) -> Result<Self, InvalidValueError> {
         let cardbus_cis_pointer = registers[10];
         let (subsystem_vendor_id, subsystem_device_id) = split_to_u16(registers[11]);
         let expansion_rom_base_address = registers[12];
@@ -312,12 +213,7 @@ impl PciGeneralDeviceHeader {
         let (interrupt_line, interrupt_pin, min_grant, max_latency) = split_to_u8(registers[15]);
 
         Ok(Self {
-            bar_0: Bar::new(bar_0),
-            bar_1: Bar::new(bar_1),
-            bar_2: Bar::new(bar_2),
-            bar_3: Bar::new(bar_3),
-            bar_4: Bar::new(bar_4),
-            bar_5: Bar::new(bar_5),
+            function: *function,
             cardbus_cis_pointer,
             subsystem_device_code: PciDeviceId {
                 vendor: subsystem_vendor_id,
@@ -331,19 +227,35 @@ impl PciGeneralDeviceHeader {
             interrupt_line,
         })
     }
+
+    /// Gets the [`Bar`] with this number. `bar_number` is an offset into the devices BARs, not registers.
+    /// For example, if `bar_number` is 0, this corresponds with the PCI register with byte offset 0x10.
+    ///
+    /// # Panics
+    /// If `bar_number` is greater than 5, as this would be past the end of the devices list of BARs.
+    ///
+    /// # Safety
+    /// `bar_number` must be the offset of a BAR which really exists,
+    /// and must not point to the second half of a 64-bit BAR.
+    /// This can be verified by checking [`class_code`][PciHeader::class_code].
+    pub unsafe fn bar(&self, bar_number: u8) -> Bar {
+        if bar_number > 5 {
+            panic!("bar_number too high");
+        }
+
+        // SAFETY: the caller guarantees that this register really is a BAR
+        unsafe { Bar::new(self.function.register(0x10 + bar_number * 4).unwrap()) }
+    }
 }
 
 /// The additional headers of a PCI to PCI bridge (header type 0x01)
 #[derive(Debug, Clone, Copy)]
 pub struct PciToPciBridgeHeader {
-    /// The 1st base address register (index 0)
-    pub bar_0: Bar,
-    /// The 2nd base address register (index 1)
-    pub bar_1: Bar,
+    function: PciFunction,
 
     pub secondary_latency_timer: u8,
     /// The highest bus number of any bus which is downstream of this bridge.
-    /// This controls how packets are routed on the PCI bus - any packets with a bus number between 
+    /// This controls how packets are routed on the PCI bus - any packets with a bus number between
     /// [`secondary_bus_number`][PciToPciBridgeHeader::secondary_bus_number] and [`subordinate_bus_number`][PciToPciBridgeHeader::subordinate_bus_number]
     /// will be routed across this bridge.
     pub subordinate_bus_number: u8,
@@ -378,10 +290,10 @@ impl PciToPciBridgeHeader {
     /// Constructs a [`PciGeneralDeviceHeader`] from the PCI registers which make it up.
     /// Takes all registers including registers common to all devices,
     /// because the value of these registers can affect the parsing of the general device specific registers.
-    fn from_registers(registers: [u32; 0x11]) -> Result<Self, InvalidValueError> {
-        let bar_0 = registers[4];
-        let bar_1 = registers[5];
-
+    fn from_registers(
+        registers: [u32; 0x11],
+        function: &PciFunction,
+    ) -> Result<Self, InvalidValueError> {
         let (
             primary_bus_number,
             secondary_bus_number,
@@ -419,8 +331,8 @@ impl PciToPciBridgeHeader {
             & (prefetchable_memory_limit_lower as u64);
 
         Ok(Self {
-            bar_0: Bar::new(bar_0),
-            bar_1: Bar::new(bar_1),
+            function: *function,
+
             secondary_latency_timer,
             subordinate_bus_number,
             secondary_bus_number,
@@ -438,6 +350,25 @@ impl PciToPciBridgeHeader {
             interrupt_pin: InterruptPin::from_pin_number(interrupt_pin)?,
             interrupt_line,
         })
+    }
+
+    /// Gets the [`Bar`] with this number. `bar_number` is an offset into the devices BARs, not registers.
+    /// For example, if `bar_number` is 0, this corresponds with the PCI register with byte offset 0x10.
+    ///
+    /// # Panics
+    /// If `bar_number` is greater than 1, as this would be past the end of the devices list of BARs.
+    ///
+    /// # Safety
+    /// `bar_number` must be the offset of a BAR which really exists,
+    /// and must not point to the second half of a 64-bit BAR.
+    /// This can be verified by checking [`class_code`][PciHeader::class_code].
+    pub unsafe fn bar(&self, bar_number: u8) -> Bar {
+        if bar_number > 1 {
+            panic!("bar_number too high");
+        }
+
+        // SAFETY: the caller guarantees that this register really is a BAR
+        unsafe { Bar::new(self.function.register(0x10 + bar_number * 4).unwrap()) }
     }
 }
 
@@ -502,13 +433,18 @@ fn split_to_u8(value: u32) -> (u8, u8, u8, u8) {
 impl PciHeader {
     /// Constructs a [`PciHeader`] from the PCI registers which make it up.
     /// Returns [`None`] if there is no device connected, checked for by whether the vendor field is `0xffff`
-    pub fn from_registers(registers: [u32; 0x11]) -> Result<Option<Self>, InvalidValueError> {
+    pub fn from_registers(
+        registers: [u32; 0x11],
+        function: &PciFunction,
+    ) -> Result<Option<Self>, InvalidValueError> {
         let (vendor, device) = split_to_u16(registers[0]);
         let (command, status) = split_to_u16(registers[1]);
         let (revision_id, prog_if, subclass, class_code) = split_to_u8(registers[2]);
         let (cache_line_size, latency_timer, header_type, bist) = split_to_u8(registers[3]);
 
-        if vendor == 0xffff { return Ok(None); }
+        if vendor == 0xffff {
+            return Ok(None);
+        }
 
         Ok(Some(Self {
             device_code: PciDeviceId { vendor, device },
@@ -525,8 +461,12 @@ impl PciHeader {
 
             is_multifunction: header_type & 0x80 != 0,
             header_type: match header_type & 0x4f {
-                0 => HeaderType::GeneralDevice(PciGeneralDeviceHeader::from_registers(registers)?),
-                1 => HeaderType::PciToPciBridge(PciToPciBridgeHeader::from_registers(registers)?),
+                0 => HeaderType::GeneralDevice(PciGeneralDeviceHeader::from_registers(
+                    registers, function,
+                )?),
+                1 => HeaderType::PciToPciBridge(PciToPciBridgeHeader::from_registers(
+                    registers, function,
+                )?),
                 2 => HeaderType::PciToCardbusBridge(),
                 t => panic!("Invalid header type 0x{t:x}"),
             },

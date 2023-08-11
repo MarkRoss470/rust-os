@@ -9,6 +9,8 @@
 #![reexport_test_harness_main = "test_main"]
 // For interrupts
 #![feature(abi_x86_interrupt)]
+// Nice-to-have int methods, such as `div_ceil`
+#![feature(int_roundings)]
 // Set up warnings and lints
 #![warn(
     //clippy::pedantic,
