@@ -8,7 +8,7 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 use crate::{
     global_state::GlobalState,
     graphics::{Colour, WRITER},
-    println, input::push_key,
+    println, input::push_key, scheduler::poll_tasks,
 };
 
 /// The start of the interrupt range taken up by the first PIC.
@@ -123,9 +123,7 @@ extern "x86-interrupt" fn page_fault_handler(
     println!("Accessed Address: {:?}", Cr2::read());
     println!("Error Code: {:?}", error_code);
     println!("{:#?}", stack_frame);
-    loop {
-        x86_64::instructions::hlt();
-    }
+    panic!("Page fault");
 }
 
 
@@ -180,6 +178,10 @@ extern "x86-interrupt" fn double_fault_handler(
 
 /// The interrupt handler which is called for the PIC timer interrupt
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    println!("Timer interrupt");
+    
+    poll_tasks();
+    
     // SAFETY:
     // This function is a hardware interrupt handler, so it must tell the interrupt controller that the handler has completed before exiting.
     unsafe {

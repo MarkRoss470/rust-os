@@ -43,6 +43,7 @@ mod pci;
 #[cfg(test)]
 mod tests;
 pub mod util;
+mod scheduler;
 
 use global_state::*;
 use input::{init_keybuffer, pop_key};
