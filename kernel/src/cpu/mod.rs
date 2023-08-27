@@ -10,9 +10,12 @@ use core::arch::asm;
 use bootloader_api::info::MemoryRegions;
 pub use frame_allocator::BootInfoFrameAllocator;
 
+use x86_64::structures::paging::frame::PhysFrameRange;
+use x86_64::structures::paging::Mapper;
 use x86_64::structures::paging::OffsetPageTable;
+use x86_64::structures::paging::Page;
 use x86_64::structures::paging::PageTable;
-use x86_64::PhysAddr;
+use x86_64::structures::paging::PageTableFlags;
 use x86_64::VirtAddr;
 
 use crate::global_state::KERNEL_STATE;
@@ -37,16 +40,64 @@ unsafe fn active_level_4_table(physical_memory_offset: VirtAddr) -> &'static mut
     unsafe { &mut *page_table_ptr }
 }
 
+/// The start address of the virtual memory region set aside for mapping MMIO regions
+const PHYSICAL_MEMORY_ACCESS_START: u64 = 0x5000_0000_0000;
+/// The max size in frames of the virtual memory region set aside for mapping MMIO regions
+/// TODO: check that these address ranges are free
+const PHYSICAL_MEMORY_ACCESS_MAX_SIZE: u64 = 25 * 1024 * 1024; // 25 MiFrames = 100 GiB
+
+/// Helper struct for accessing physical addresses
 #[derive(Debug)]
 pub struct PhysicalMemoryAccessor {
-    memory_offset: VirtAddr,
+    /// The index of the next virtual frame to be allocated from [`PHYSICAL_MEMORY_ACCESS_START`]
+    next_frame: u64,
 }
 
 impl PhysicalMemoryAccessor {
-    pub unsafe fn get_addr(&self, addr: PhysAddr) -> VirtAddr {
-        self.memory_offset + addr.as_u64()
+    /// Maps the given page range into virtual memory and returns the address where they were mapped
+    pub fn map_frames(&mut self, frames: PhysFrameRange) -> VirtAddr {
+        let flags: PageTableFlags =
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_CACHE;
+
+        let num_frames = frames.end - frames.start;
+        let mut page_table = KERNEL_STATE.page_table.lock();
+        let mut frame_allocator = KERNEL_STATE.frame_allocator.lock();
+
+        let start_virtual_page =
+            Page::containing_address(VirtAddr::new(PHYSICAL_MEMORY_ACCESS_START)) + self.next_frame;
+
+        self.next_frame += frames.end - frames.start;
+
+        if self.next_frame >= PHYSICAL_MEMORY_ACCESS_MAX_SIZE {
+            panic!("Used up MMIO mapping space");
+        }
+
+        let start_physical_page = frames.start;
+
+        for i in 0..num_frames {
+            let page = start_virtual_page + i;
+
+            // SAFETY: This virtual frame has not been used yet.
+            // It is the caller's responsibility to make sure the physical frame is valid.
+            unsafe {
+                page_table
+                    .map_to(page, start_physical_page + i, flags, &mut *frame_allocator)
+                    .unwrap()
+                    .flush();
+            }
+        }
+
+        for i in 0..num_frames {
+            let page = start_virtual_page + i;
+            let physical_page = page_table.translate_page(page).unwrap();
+
+            debug_assert_eq!(physical_page, start_physical_page + i);
+        }
+
+        start_virtual_page.start_address()
     }
 }
+
 
 /// This function:
 /// * Loads the GDT and IDT structures
@@ -76,12 +127,10 @@ pub unsafe fn init_cpu(physical_memory_offset: VirtAddr) -> OffsetPageTable<'sta
     // SAFETY:
     // All of physical memory is mapped at the given address as a safety condition of init_mem
     let level_4_table = unsafe { active_level_4_table(physical_memory_offset) };
-    
+
     KERNEL_STATE
         .physical_memory_accessor
-        .init(PhysicalMemoryAccessor {
-            memory_offset: physical_memory_offset,
-        });
+        .init(PhysicalMemoryAccessor { next_frame: 0 });
 
     // SAFETY:
     // The given level_4_table is correct as long as `physical_memory_offset` is correct,
