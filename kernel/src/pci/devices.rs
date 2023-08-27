@@ -3,7 +3,7 @@
 
 use core::fmt::Display;
 use spin::Mutex;
-use x86_64::instructions::port::{self, Port, PortWriteOnly};
+use x86_64::instructions::port::{Port, PortWriteOnly};
 
 use super::{classcodes::InvalidValueError, registers::PciHeader};
 
@@ -208,6 +208,21 @@ impl PciRegister {
             ..*self
         })
     }
+
+    /// Gets the [`PciDevice`] which this register is a part of
+    pub fn get_device(&self) -> PciDevice {
+        PciDevice { bus: self.bus, device: self.device }
+    }
+
+    /// Gets the [`PciFunction`] which this register is a part of
+    pub fn get_function(&self) -> PciFunction {
+        PciFunction { bus: self.bus, device: self.device, function: self.function }
+    }
+
+    /// Gets the bus number of the device this register is a part of
+    pub fn get_bus(&self) -> u8 {
+        self.bus
+    }
 }
 
 /// Represents a specific function of a [`PciDevice`]
@@ -265,6 +280,16 @@ impl PciFunction {
 
         PciHeader::from_registers(registers, self)
     }
+
+    /// Gets the [`PciDevice`] which this function is a part of
+    pub fn get_device(&self) -> PciDevice {
+        PciDevice { bus: self.bus, device: self.device }
+    }
+
+    /// Gets the bus number of the device this function is a part of
+    pub fn get_bus(&self) -> u8 {
+        self.bus
+    }
 }
 
 /// The bus:device address of a PCI device
@@ -288,5 +313,10 @@ impl PciDevice {
     /// Gets the [`PciFunction`] of this device with the given function number
     pub fn function(&self, function: u8) -> Result<PciFunction, PciInvalidAddressError> {
         PciFunction::new(self.bus, self.device, function)
+    }
+
+    /// Gets the bus number this device is on
+    pub fn get_bus(&self) -> u8 {
+        self.bus
     }
 }
