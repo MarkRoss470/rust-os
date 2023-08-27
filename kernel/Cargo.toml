@@ -18,16 +18,22 @@ pic8259 = "0.10.1"
 # For converting scancodes to characters
 pc-keyboard = "0.7"
 
-# For the kernel heap
-linked_list_allocator = "0.10"
-
 # For floating point functions without std
 libm = "0.2"
 
 # For sending print! to the host when running under qemu
 uart_16550 = "0.2.0"
 
+# For building nicer APIs around hardware registers
 bitfield-struct = "*"
+# For dealing with memory mapped IO
+volatile = "0.5"
+
+# For handling async code
+[dependencies.futures]
+version = "*"
+default-features = false
+features = ["async-await"]
 
 [dependencies.lazy_static]
 version = "1.0"

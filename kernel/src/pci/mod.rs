@@ -3,14 +3,19 @@
 mod bar;
 mod classcodes;
 mod devices;
+mod drivers;
 mod registers;
 
 use alloc::{collections::VecDeque, vec::Vec};
 
+use crate::scheduler::Task;
 use crate::{global_state::GlobalState, println};
+use devices::*;
 use registers::HeaderType;
 use registers::PciHeader;
-use devices::*;
+
+use self::classcodes::SerialBusControllerType;
+use self::drivers::usb::xhci::XhciController;
 
 /// A cached header of a [`PciFunction`]
 #[derive(Debug)]
@@ -146,14 +151,18 @@ static PCI_CACHE: GlobalState<PciCache> = GlobalState::new();
 pub unsafe fn init() {
     PCI_CACHE.init(scan_pci());
 
-    // for function in PCI_CACHE.lock().functions() {
-    //     if let classcodes::ClassCode::SerialBusController(SerialBusControllerType::USBController(
-    //         classcodes::USBControllerType::XHCI,
-    //     )) = function.header.class_code
-    //     {
-    //         println!("XHCI controller at {}", function.function);
-    //     }
-    // }
+    for function in PCI_CACHE.lock().functions() {
+        if let classcodes::ClassCode::SerialBusController(SerialBusControllerType::UsbController(
+            classcodes::USBControllerType::Xhci,
+        )) = function.header.class_code
+        {
+            // SAFETY: This function may only be called once, and `PCI_CACHE.lock().functions()`
+            // produces each function only once, so `XhciController::new` will only be called once per function. 
+            let task = unsafe { XhciController::init(function.function) };
+
+            Task::register(task);
+        }
+    }
 
     // println!("{:#?}", *PCI_CACHE.lock());
 }

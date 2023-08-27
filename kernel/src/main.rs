@@ -9,17 +9,22 @@
 #![reexport_test_harness_main = "test_main"]
 // For interrupts
 #![feature(abi_x86_interrupt)]
+// For checking offsets of struct fields
+#![feature(offset_of)]
 // Nice-to-have int methods, such as `div_ceil`
 #![feature(int_roundings)]
+#![feature(pointer_byte_offsets)]
 // Set up warnings and lints
 #![warn(
     //clippy::pedantic,
     //clippy::nursery,
-    rustdoc::all,
+    missing_docs,
     clippy::missing_docs_in_private_items,
+    rustdoc::all,
     unsafe_op_in_unsafe_fn,
 )]
 #![deny(clippy::undocumented_unsafe_blocks)]
+#![allow(rustdoc::private_intra_doc_links)]
 
 #[macro_use]
 extern crate bitfield_struct;
@@ -28,17 +33,17 @@ extern crate bitfield_struct;
 extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
-use bootloader_api::{BootInfo, BootloaderConfig};
+use bootloader_api::{info::MemoryRegions, BootInfo, BootloaderConfig};
 use x86_64::VirtAddr;
 
 #[macro_use]
 mod serial;
 
+mod allocator;
+mod cpu;
 mod global_state;
 mod graphics;
 pub mod input;
-mod allocator;
-mod cpu;
 mod pci;
 #[cfg(test)]
 mod tests;
@@ -46,9 +51,9 @@ pub mod util;
 mod scheduler;
 
 use global_state::*;
+use graphics::init_graphics;
 use input::{init_keybuffer, pop_key};
 use pci::lspci;
-use graphics::init_graphics;
 
 /// This function is called on panic.
 #[cfg(not(test))]
@@ -61,6 +66,34 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     loop {
         x86_64::instructions::hlt();
     }
+}
+
+/// Prints out the regions of a [`MemoryRegions`] struct in a compact debug form.
+fn debug_memory_regions(memory_regions: &MemoryRegions) {
+    println!();
+
+    let first = memory_regions.first().unwrap();
+
+    // Keep track of the previous region to merge adjacent regions of the same kind
+    let mut last_start = first.start;
+    let mut last_end = first.end;
+    let mut last_kind = first.kind;
+
+    for region in memory_regions.iter().skip(1) {
+        if region.start != last_end || region.kind != last_kind {
+            println!(
+                "{:#016x} - {:#016x}: {:?}",
+                last_start, last_end, last_kind
+            );
+            last_start = region.start;
+            last_end = region.end;
+            last_kind = region.kind;
+        } else {
+            last_end = region.end;
+        }
+    }
+
+    println!();
 }
 
 /// Initialises the kernel and constructs a [`KernelState`] struct to represent it.
@@ -76,6 +109,7 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
             boot_info.physical_memory_offset.into_option().unwrap(),
         ))
     };
+
     KERNEL_STATE.page_table.init(page_table);
 
     println!("Initialised page table");
@@ -83,10 +117,12 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
     init_graphics(boot_info.framebuffer.as_mut().unwrap());
 
     println!("Initialised graphics");
+    println!("Physical memory offset: {:#x}", boot_info.physical_memory_offset.into_option().unwrap());
+    debug_memory_regions(&boot_info.memory_regions);
 
     // SAFETY: The provided `boot_info` is correct
-    let frame_allocator = unsafe { cpu::init_frame_allocator(&boot_info.memory_regions) };
-    KERNEL_STATE.frame_allocator.init(frame_allocator);
+    unsafe { cpu::init_frame_allocator(&boot_info.memory_regions) };
+
 
     println!("Initialised frame allocator");
 
@@ -125,8 +161,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // This is the entry point for the program, so init() cannot have been run before.
     // This code runs with kernel privileges
     unsafe { init(boot_info) };
-
-    println!("Looping");
 
     //x86_64::instructions::interrupts::disable();
     x86_64::instructions::interrupts::int3();
