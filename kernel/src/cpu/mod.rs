@@ -113,12 +113,12 @@ pub unsafe fn init_cpu(physical_memory_offset: VirtAddr) -> OffsetPageTable<'sta
 
     // Load the IDT structure, which defines interrupt and exception handlers
     // SAFETY:
-    // init_mem is only called once and this is the only call-site of idt::init
+    // init_cpu is only called once and this is the only call-site of idt::init
     unsafe { idt::init() }
 
     // Initialise the interrupt controller
     // SAFETY:
-    // init_mem is only called once and this is the only call-site of idt::init_pic
+    // init_cpu is only called once and this is the only call-site of idt::init_pic
     unsafe { idt::init_pic() }
 
     // Enable interrupts on the CPU
