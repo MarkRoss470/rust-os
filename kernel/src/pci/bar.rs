@@ -1,21 +1,37 @@
 //! Functionality for reading and writing Base Address Registers (BARs)
 
+use core::fmt::Debug;
+
 use x86_64::{
-    structures::paging::{frame::PhysFrameRange, FrameAllocator, PhysFrame},
+    structures::paging::{frame::PhysFrameRange, PhysFrame},
     PhysAddr,
 };
 
-use crate::{global_state::KERNEL_STATE, println};
-
+use crate::println;
 use super::devices::PciRegister;
 
 /// The address of a region in memory used by the PCI device
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub enum MemorySpaceBarBaseAddress {
     /// A 32-bit base address
     Small(u32),
-    /// A 64-but base address
+    /// A 64-bit base address
     Large(u64),
+}
+
+impl Debug for MemorySpaceBarBaseAddress {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Small(arg0) => f
+                .debug_tuple("Small")
+                .field(&format_args!("{arg0:#x}"))
+                .finish(),
+            Self::Large(arg0) => f
+                .debug_tuple("Large")
+                .field(&format_args!("{arg0:#x}"))
+                .finish(),
+        }
+    }
 }
 
 /// A Base Address Representation (BAR) - a pointer to a memory location used by a PCI device
@@ -33,6 +49,7 @@ pub enum BarValue {
 
     /// The BAR is a port number
     /// TODO: figure out what's up with these
+    #[allow(dead_code)]
     IOSpace {
         /// The port number (I think) of the device
         base_address: u32,
@@ -75,7 +92,7 @@ impl Bar {
                 // And any BAR with a type of 0x02 is guaranteed for the next register to be part of the same BAR.
                 let upper_32 = unsafe { self.register.next().unwrap().read_u32() };
 
-                println!("Second BAR: 0b{upper_32:b}");
+                // println!("Second BAR: 0b{upper_32:b}");
 
                 BarValue::MemorySpace {
                     base_address: MemorySpaceBarBaseAddress::Large(
@@ -174,7 +191,7 @@ impl Bar {
         };
 
         assert_eq!(
-            value & (self.get_size() as u64 - 1),
+            value & (self.get_size() - 1),
             0,
             "Value must be aligned to the size of the BAR"
         );
@@ -206,76 +223,59 @@ impl Bar {
                     debug_assert_eq!((r1 as u64) << 32 | r0 as u64, value);
                 }
 
-                println!("{:?}", self.read_value());
-
-                if let BarValue::MemorySpace {
+                let BarValue::MemorySpace {
                     base_address: MemorySpaceBarBaseAddress::Large(a),
                     ..
                 } = self.read_value()
-                {
-                    // SAFETY: PCI config reads don't have side effects
-                    let (r0, r1) = unsafe {
-                        let r0 = self.register.read_u32() & !0b1111;
-                        let r1 = self.register.next().unwrap().read_u32();
-                        (r0, r1)
-                    };
-
-                    println!("0x{:x}  0x{:x}", r0, r1);
-                    println!(
-                        "0x{:x}  0x{:?}",
-                        (r1 as u64) << 32 | r0 as u64,
-                        self.read_value()
-                    );
-                    debug_assert_eq!(a, value);
-                } else {
+                else {
                     panic!("The BAR changed type");
-                }
+                };
+
+                debug_assert_eq!(a, value);
             }
         }
     }
 
-    /// Allocates enough frames for this BAR and writes the address to the BAR, returning the allocated frames.
-    /// If the BAR is already allocated (it contains a non-zero value) the current allocation will be returned instead.
-    ///
-    /// # Safety
-    /// The caller must ensure that writing this value will not violate safety,
-    /// and that no other code is relying on the value of this BAR.
-    pub unsafe fn allocate(&self) -> PhysFrameRange {
-        let BarValue::MemorySpace { base_address, .. } = &self.read_value() else {
-            unimplemented!("Allocating IO space BARs");
+    /// Gets the physical frames this BAR is mapped to.
+    /// 
+    /// # Panics
+    /// * If the bar is IO space
+    /// * If the value of the BAR is 0
+    pub fn get_frames(&self) -> PhysFrameRange {
+        let BarValue::MemorySpace { base_address, .. } = self.read_value() else {
+            unimplemented!("IO space BARs")
         };
 
+        let base_address = match base_address {
+            MemorySpaceBarBaseAddress::Small(a) => a as u64,
+            MemorySpaceBarBaseAddress::Large(a) => a,
+        };
+
+        if base_address == 0 { panic!("BAR was not allocated by the BIOS") }
+
         let size = self.get_size();
-        let frames = size.div_ceil(4096) as u64;
-        let allocated_frames = KERNEL_STATE
-            .frame_allocator
-            .lock()
-            .allocate_consecutive(frames, size as u64)
-            .expect("Should have allocated frames");
 
-        match base_address {
-            // If the BAR is already allocated, don't reallocate
-            MemorySpaceBarBaseAddress::Large(address) => {
-                if *address != 0 {
-                    let start = PhysFrame::containing_address(PhysAddr::new(*address));
-                    return PhysFrameRange {
-                        start,
-                        end: start + frames,
-                    };
-                }
-            }
-            _ => {
-                todo!("Allocating 32-bit BARs");
-            }
-        }
+        let start_page = PhysFrame::containing_address(PhysAddr::new(base_address));
 
-        let address = allocated_frames.start.start_address().as_u64();
+        PhysFrameRange { start: start_page, end: start_page + size / 0x1000 }
+    }
 
-        // SAFETY: The safety of this operation is the caller's responsibility
-        unsafe {
-            self.write_u64(address);
-        }
+    /// Prints out the BAR's info in a debug format
+    #[allow(dead_code)]
+    pub fn debug(&self) {
+        let BarValue::MemorySpace {
+            base_address,
+            prefetchable,
+        } = self.read_value()
+        else {
+            panic!()
+        };
 
-        allocated_frames
+        println!(
+            "Address: {:?}, Size: 0x{:x}, Prefetchable: {}",
+            base_address,
+            self.get_size(),
+            prefetchable
+        );
     }
 }
