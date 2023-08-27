@@ -1,3 +1,5 @@
+//! A simple task-based scheduler for running code asynchronously.
+
 use core::{
     future::Future,
     pin::Pin,
@@ -15,6 +17,7 @@ pub struct Task(Pin<Box<dyn Future<Output = ()>>>);
 unsafe impl Send for Task {}
 
 impl Task {
+    /// Registers a new task
     pub fn register<T>(t: T)
     where
         T: Future<Output = ()> + 'static,
