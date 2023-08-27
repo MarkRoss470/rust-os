@@ -10,6 +10,15 @@ use crate::cpu::{BootInfoFrameAllocator, PhysicalMemoryAccessor};
 #[derive(Debug)]
 pub struct GlobalState<T>(Mutex<Option<T>>);
 
+/// An error which can occur when trying to get the data of a [`GlobalState`] object
+/// using the [`try_locked_if_init`][GlobalState::try_locked_if_init] method.
+pub enum TryLockedIfInitError {
+    /// The [`GlobalState`] object was locked
+    Locked,
+    /// The [`GlobalState`] object is not yet initialised
+    NotInitialised,
+}
+
 impl<T> GlobalState<T> {
     /// Create a new [`GlobalState`], with a value of [`None`].
     pub const fn new() -> Self {
@@ -19,7 +28,7 @@ impl<T> GlobalState<T> {
     /// Initialise the [`GlobalState`] with a value.
     ///
     /// # Panics
-    /// If the [`GlobalState`] has already been initialised contains a [`Some`] variant
+    /// If the [`GlobalState`] has already been initialised
     pub fn init(&self, data: T) {
         let mut s = self.0.lock();
         if s.is_some() {
@@ -34,6 +43,9 @@ impl<T> GlobalState<T> {
     }
 
     /// Lock the contained [`Mutex`], wrapped in a [`GlobalStateLock`]
+    /// 
+    /// # Panics
+    /// If the [`GlobalState`] is already locked
     pub fn lock(&self) -> GlobalStateLock<T> {
         GlobalStateLock(self.0.lock())
     }
@@ -41,6 +53,19 @@ impl<T> GlobalState<T> {
     /// Tries to lock the contained [`Mutex`]
     pub fn try_lock(&self) -> Option<GlobalStateLock<T>> {
         self.0.try_lock().map(|lock| GlobalStateLock(lock))
+    }
+
+    /// Tries to lock the contained [`Mutex`] and then only return a lock if the data has been initialised.
+    pub fn try_locked_if_init(&self) -> Result<GlobalStateLock<T>, TryLockedIfInitError> {
+        let Some(l) = self.0.try_lock() else {
+            return Err(TryLockedIfInitError::Locked);
+        };
+
+        if l.is_some() {
+            Ok(GlobalStateLock(l))
+        } else {
+            Err(TryLockedIfInitError::NotInitialised)
+        }
     }
 }
 
