@@ -131,10 +131,13 @@ fn enable_sse() {
 ///
 /// # Safety
 /// This function must only be called once. The provided [`MemoryRegions`] must be valid and correct.
-pub unsafe fn init_frame_allocator(memory_map: &'static MemoryRegions) -> BootInfoFrameAllocator {
+pub unsafe fn init_frame_allocator(memory_map: &'static MemoryRegions) {
     // SAFETY:
     // `memory_map` is valid as a safety condition of this function
-    unsafe { BootInfoFrameAllocator::init(memory_map) }
+    let frame_allocator = unsafe { BootInfoFrameAllocator::new(memory_map) };
+    KERNEL_STATE
+        .frame_allocator
+        .init(frame_allocator);
 }
 
 /// Tests that floating point numbers are usable and work correctly

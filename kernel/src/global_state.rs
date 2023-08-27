@@ -68,7 +68,7 @@ impl<'a, T> core::ops::DerefMut for GlobalStateLock<'a, T> {
 pub struct KernelState {
     /// Struct which manages page tables to map virtual pages to physical memory
     pub page_table: GlobalState<KernelPageTable>,
-    /// Struct which manages allocating physical frames
+    /// Struct which manages allocating physical frames of memory
     pub frame_allocator: GlobalState<KernelFrameAllocator>,
     /// Struct which allocates the kernel heap
     pub heap_allocator: &'static GlobalState<KernelHeapAllocator>,

@@ -11,8 +11,10 @@ use x86_64::PhysAddr;
 pub struct BootInfoFrameAllocator {
     /// The [`MemoryRegion`] of what sections of physical memory are free
     memory_map: &'static [MemoryRegion],
-    /// The index into [`self.usable_frames`][Self::usable_frames]
-    next: usize,
+    /// The region of the [`memory_map`][Self::memory_map] from which frames are currently being allocated
+    current_region: usize,
+    /// The next frame in the [`current_region`][Self::current_region] to be allocated
+    current_frame: u64,
 }
 
 impl BootInfoFrameAllocator {
@@ -22,43 +24,37 @@ impl BootInfoFrameAllocator {
     /// The passed [`MemoryRegion`] must be valid. The main requirement is that all frames that are marked
     /// as `USABLE` in it are really unused.
     /// The returned [`FrameAllocator`] must be the only frame allocator globally, or frames will be allocated twice, causing undefined behaviour.
-    pub unsafe fn init(memory_map: &'static MemoryRegions) -> Self {
+    pub unsafe fn new(memory_map: &'static MemoryRegions) -> Self {
         Self {
             memory_map,
-            next: 0,
+            current_region: 0,
+            current_frame: 0,
         }
     }
 
-    /// Returns an iterator over the usable frames specified in the memory map given to [`init`][BootInfoFrameAllocator::init].
-    fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
-        // get usable regions from memory map
-        let regions = self.memory_map.iter();
-        let usable_regions = regions.filter(|r| r.kind == MemoryRegionKind::Usable);
-        // map each region to its address range
-        let addr_ranges = usable_regions.map(|r| r.start..r.end);
-        // transform to an iterator of frame start addresses
-        let frame_addresses = addr_ranges.flat_map(|r| r.step_by(4096));
-        // create `PhysFrame` types from the start addresses
-        frame_addresses.map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
-    }
-
     /// Allocates consecutive physical frames.
+    ///
+    /// # Parameters:
+    /// * `frames`: The number of frames to allocate
+    /// * `align`: The byte alignment that the starting address of the frame needs to have
     pub fn allocate_consecutive(&mut self, frames: u64, align: u64) -> Option<PhysFrameRange> {
-        let mut frame_iter = self.usable_frames().take(self.next - 1);
-
+        // TODO: this skips lots of frames which can then never be allocated
         'regions: loop {
-            let start_frame =
-                frame_iter.find(|frame| frame.start_address().as_u64() & (align - 1) == 0)?;
+            let start_frame = self.allocate_frame()?;
+
+            if !start_frame.start_address().is_aligned(align) {
+                continue;
+            }
 
             for i in 1..=frames {
-                if frame_iter.next()? - start_frame != i {
+                if self.allocate_frame()? - start_frame != i {
                     continue 'regions;
                 }
             }
 
             return Some(PhysFrameRange {
                 start: start_frame,
-                end: start_frame + frames - 1,
+                end: start_frame + frames,
             });
         }
     }
@@ -68,8 +64,28 @@ impl BootInfoFrameAllocator {
 // The MemoryMap passed to init is guaranteed to be accurate, so this will only produce unused frames
 unsafe impl FrameAllocator<Size4KiB> for BootInfoFrameAllocator {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        let frame = self.usable_frames().nth(self.next);
-        self.next += 1;
-        frame
+        loop {
+            let region = self.memory_map.get(self.current_region)?;
+
+            // If the region is not usable, skip it
+            if region.kind != MemoryRegionKind::Usable {
+                self.current_region += 1;
+                self.current_frame = 0;
+                continue;
+            }
+
+            let frame = region.start + 0x1000 * self.current_frame;
+
+            // If the end of the current region has been reached, move on to the next
+            if frame >= region.end {
+                self.current_region += 1;
+                self.current_frame = 0;
+                continue;
+            }
+
+            self.current_frame += 1;
+
+            return Some(PhysFrame::containing_address(PhysAddr::new(frame)));
+        }
     }
 }
