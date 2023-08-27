@@ -89,12 +89,38 @@ impl Bar {
         }
     }
 
-    pub fn get_size(&self) -> usize {
-        // SAFETY: This struct is unsafe to construct from a PciRegister which is not a BAR,
+    /// Gets the size of the BAR
+    pub fn get_size(&self) -> u64 {
+        // Disable both IO space and memory space accesses while performing all 1s write
+        // to prevent it from being misinterpreted
+        let function = &self.register.get_function();
+        let register = function.register(4).unwrap();
+
+        // SAFETY: Reads from PCI configuration registers shouldn't have side effects
+        let previous_command = unsafe {
+            // Take only the bottom 2 bytes because the top 2 bytes are the status register
+            register.read_u32() & 0xffff
+        };
+
+        // SAFETY: This write sets the Memory Space and I/O Space bits of the command register to 0.
+        // This disables memory and IO space accesses.
+        // This operation is sound because the bits are reset at the end of the method.
+        unsafe {
+            register.write_u32(previous_command & !0b11);
+        }
+
+        // SAFETY: memory and IO space accesses were disabled above, so this write can't have side effects.
         let value_after_write = unsafe { self.register.write_and_reset(u32::MAX) };
 
         // Mask out the BAR's flag bits
         let masked_address = value_after_write & !0b1111;
+
+        // SAFETY: This only restores the value that was previously in the command register.
+        // This write also writes all 0s to the status register,
+        // but all the bits in that register are either read only or RW1C (writing 0 has no effect).
+        unsafe {
+            register.write_u32(previous_command);
+        }
 
         // Only the writes to the top bits will have succeeded, so doing a bitwise not will make this only the lower bits.
         // Then adding one will give back the power of 2 size of the BAR
