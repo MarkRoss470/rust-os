@@ -119,24 +119,24 @@ impl XhciController {
                 .count()
         );
 
-        let mut i = 0;
+        // let mut i = 0;
 
-        loop {
-            futures::pending!();
+        // loop {
+        //     futures::pending!();
 
-            i += 1;
+        //     i += 1;
 
-            if i % 20 == 0 {
-                println!(
-                    "{function}: Number of attached devices: {}",
-                    controller
-                        .operational_registers
-                        .ports()
-                        .filter(|port| port.read_status_and_control().device_connected())
-                        .count()
-                );
-            }
-        }
+        //     if i % 20 == 0 {
+        //         println!(
+        //             "{function}: Number of attached devices: {}",
+        //             controller
+        //                 .operational_registers
+        //                 .ports()
+        //                 .filter(|port| port.read_status_and_control().device_connected())
+        //                 .count()
+        //         );
+        //     }
+        // }
     }
 
     /// Writes `true` to [`UsbCommand::reset`][operational_registers::UsbCommand::reset],
