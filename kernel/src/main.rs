@@ -39,16 +39,17 @@ use x86_64::VirtAddr;
 #[macro_use]
 mod serial;
 
+mod acpi;
 mod allocator;
 mod cpu;
 mod global_state;
 mod graphics;
 pub mod input;
 mod pci;
+mod scheduler;
 #[cfg(test)]
 mod tests;
 pub mod util;
-mod scheduler;
 
 use global_state::*;
 use graphics::init_graphics;
@@ -81,10 +82,7 @@ fn debug_memory_regions(memory_regions: &MemoryRegions) {
 
     for region in memory_regions.iter().skip(1) {
         if region.start != last_end || region.kind != last_kind {
-            println!(
-                "{:#016x} - {:#016x}: {:?}",
-                last_start, last_end, last_kind
-            );
+            println!("{:#016x} - {:#016x}: {:?}", last_start, last_end, last_kind);
             last_start = region.start;
             last_end = region.end;
             last_kind = region.kind;
@@ -116,13 +114,24 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
 
     init_graphics(boot_info.framebuffer.as_mut().unwrap());
 
+    // SAFETY: This function is only called once.
+    // The bootloader gets the rsdp pointer from the BIOS or UEFI so it is valid and accurate.
+    unsafe {
+        acpi::init(
+            boot_info.rsdp_addr.into_option().unwrap(),
+            boot_info.physical_memory_offset.into_option().unwrap(),
+        );
+    }
+
     println!("Initialised graphics");
-    println!("Physical memory offset: {:#x}", boot_info.physical_memory_offset.into_option().unwrap());
+    println!(
+        "Physical memory offset: {:#x}",
+        boot_info.physical_memory_offset.into_option().unwrap()
+    );
     debug_memory_regions(&boot_info.memory_regions);
 
     // SAFETY: The provided `boot_info` is correct
     unsafe { cpu::init_frame_allocator(&boot_info.memory_regions) };
-
 
     println!("Initialised frame allocator");
 
