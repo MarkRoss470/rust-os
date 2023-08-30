@@ -31,9 +31,7 @@ pub unsafe fn init(rsdp_addr: u64, physical_memory_offset: u64) {
     let fadt = system_table.fadt().unwrap();
     let madt = system_table.madt().unwrap();
 
-    for record in madt.records() {
-        println!("{record:?}");
-    }
+    println!("{madt:#?}");
 }
 
 /// An error occurring while calculating the checksum of an ACPI table.

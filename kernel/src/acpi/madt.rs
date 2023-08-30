@@ -1,6 +1,8 @@
 //! The [`Madt`] and related types
 
-use crate::println;
+use core::fmt::Debug;
+
+use crate::{println, util::iterator_list_debug::IteratorListDebug};
 
 use super::{ChecksumError, SdtHeader};
 
@@ -351,7 +353,7 @@ impl MadtRecord {
 
 #[bitfield(u32)]
 pub struct MadtFlags {
-    /// Whether also has a PC-AT-compatible dual-8259 setup. 
+    /// Whether also has a PC-AT-compatible dual-8259 setup.
     /// The 8259 vectors must be disabled (that is, masked) when enabling the ACPI APIC operation.
     pcat_compatible: bool,
 
@@ -360,9 +362,9 @@ pub struct MadtFlags {
 }
 
 /// The MADT data structure.
-/// 
+///
 /// For more info see the spec section [5.2.12]
-/// 
+///
 /// [5.2.12]: https://uefi.org/specs/ACPI/6.5/05_ACPI_Software_Programming_Model.html#multiple-apic-description-table-madt
 pub struct Madt {
     /// The table header
@@ -426,5 +428,16 @@ impl Madt {
                 None
             }
         })
+    }
+}
+
+impl Debug for Madt {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Madt")
+            .field("header", &self.header)
+            .field("local_apic_address", &format_args!("{:#x}", self.local_apic_address))
+            .field("flags", &self.flags)
+            .field("records", &IteratorListDebug::new_with_default_formatting(self.records()))
+            .finish()
     }
 }
