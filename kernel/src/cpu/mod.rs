@@ -4,6 +4,7 @@
 // pub mod allocator;
 mod frame_allocator;
 mod idt;
+pub mod interrupt_controllers;
 
 use core::arch::asm;
 
@@ -119,7 +120,7 @@ pub unsafe fn init_cpu(physical_memory_offset: VirtAddr) -> OffsetPageTable<'sta
     // Initialise the interrupt controller
     // SAFETY:
     // init_cpu is only called once and this is the only call-site of idt::init_pic
-    unsafe { idt::init_pic() }
+    unsafe { interrupt_controllers::init_pic() }
 
     // Enable interrupts on the CPU
     x86_64::instructions::interrupts::enable();

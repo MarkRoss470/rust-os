@@ -113,17 +113,18 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
     println!("Initialised page table");
 
     init_graphics(boot_info.framebuffer.as_mut().unwrap());
+    println!("Initialised graphics");
 
     // SAFETY: This function is only called once.
     // The bootloader gets the rsdp pointer from the BIOS or UEFI so it is valid and accurate.
-    unsafe {
+    let acpi_cache = unsafe {
         acpi::init(
             boot_info.rsdp_addr.into_option().unwrap(),
             boot_info.physical_memory_offset.into_option().unwrap(),
-        );
-    }
+        )
+    };
+    KERNEL_STATE.apci_cache.init(acpi_cache);
 
-    println!("Initialised graphics");
     println!(
         "Physical memory offset: {:#x}",
         boot_info.physical_memory_offset.into_option().unwrap()
@@ -144,6 +145,12 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
     unsafe { pci::init() }
 
     init_keybuffer();
+
+    println!("Initialising APIC");
+
+    // SAFETY: This function is only called once.
+    // TODO: This doesn't need unwrapping if the PIC is working
+    unsafe { cpu::interrupt_controllers::init_local_apic().unwrap() };
 
     println!("Finished initialising kernel");
 }
@@ -176,6 +183,21 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
 
     lspci();
 
+    for i in 0.. {
+        if i % 100_000 == 0 {
+            println!(
+                "({}, {})",
+                cpu::interrupt_controllers::PIC_EOI.load(core::sync::atomic::Ordering::Relaxed),
+                cpu::interrupt_controllers::APIC_EOI.load(core::sync::atomic::Ordering::Relaxed)
+            );
+        }
+    }
+
+    shell_loop()
+}
+
+/// Loops while receiving commands from keyboard input
+fn shell_loop() -> ! {
     let mut input = String::new();
 
     loop {

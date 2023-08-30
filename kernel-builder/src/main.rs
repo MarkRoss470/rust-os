@@ -19,6 +19,10 @@ struct Args {
     #[arg(long)]
     debug: Option<String>,
 
+    /// Gets qemu to write a log file to the given file
+    #[arg(long)]
+    qemu_debug: Option<String>,
+
     /// Compiles the kernel in release mode.
     #[arg(long, action)]
     release: bool,
@@ -69,6 +73,7 @@ fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
         .arg(format!("if=none,format=raw,id=os-drive,file={}", file)); // Load the specified image as a drive
     c.arg("-device").arg("qemu-xhci"); // Add an XHCI USB controller
     c.arg("-device").arg("usb-storage,drive=os-drive"); // Add the kernel image as a USB storage device
+    c.arg("-device").arg("usb-mouse");
 
     if test {
         c.arg("-device")
@@ -83,6 +88,12 @@ fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
             .arg("-daemonize") // Run in background
             .arg("-serial")
             .arg(format!("file:{file}")); // Redirect serial to given file
+            
+        if let Some(ref qemu_file) = args.qemu_debug {
+            c.arg("-D")
+            .arg(format!("{qemu_file}"))
+            .arg("-d").arg("int");
+        }
     } else {
         c.arg("-serial").arg("stdio"); // Redirect serial to stdout
     }

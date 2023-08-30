@@ -6,23 +6,15 @@ use spin::Mutex;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 use crate::{
+    cpu::interrupt_controllers::end_interrupt,
     global_state::GlobalState,
     graphics::{Colour, WRITER},
-    println, input::push_key, scheduler::poll_tasks,
+    input::push_key,
+    println,
+    scheduler::poll_tasks,
 };
 
-/// The start of the interrupt range taken up by the first PIC.
-/// 32 is chosen because it is the first free interrupt slot after the 32 CPU exceptions.
-const PIC_1_OFFSET: u8 = 32;
-/// The start of the interrupt range taken up by the second PIC.
-const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
-
-/// Struct in charge of controlling the two PICs which give hardware interrupts.
-static PICS: Mutex<ChainedPics> = Mutex::new(
-    // SAFETY:
-    // These interrupt offsets do not interfere with the CPU exception range
-    unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) },
-);
+use super::interrupt_controllers::PIC_1_OFFSET;
 
 /// The Interrupt Descriptor Table
 static mut IDT: Option<InterruptDescriptorTable> = None;
@@ -32,6 +24,14 @@ static mut IDT: Option<InterruptDescriptorTable> = None;
 /// This function may only be called once
 pub unsafe fn init() {
     let mut idt = InterruptDescriptorTable::new();
+
+    for i in 0..255 {
+        match i {
+            8 | 10..=15 | 17 | 18 | 21..=31 => continue,
+            _ => idt[i].set_handler_fn(unknown_interrupt),
+        };
+    }
+
     idt.breakpoint.set_handler_fn(breakpoint_handler);
     idt.page_fault.set_handler_fn(page_fault_handler);
     idt.invalid_opcode.set_handler_fn(invalid_opcode);
@@ -56,14 +56,6 @@ pub unsafe fn init() {
     ));
 }
 
-/// # Safety
-/// This function may only be called once
-pub unsafe fn init_pic() {
-    // SAFETY:
-    // This function is only called once
-    unsafe { PICS.lock().initialize() };
-}
-
 /// The index in the IDT where different types of hardware interrupt handlers will be registered
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
@@ -84,16 +76,9 @@ impl InterruptIndex {
     }
 }
 
-/// Notifies the interrupt controller that a handler has ended
-/// # Safety
-/// This function may only be called by hardware interrupt handlers, once per call, directly before the handler returns
-unsafe fn end_interrupt() {
-    // SAFETY:
-    // These safety requirements are enforced by the caller
-    unsafe {
-        PICS.lock()
-            .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
-    }
+/// Interrupt handler for any interrupt there is not a dedicated handler for
+extern "x86-interrupt" fn unknown_interrupt(stack_frame: InterruptStackFrame) {
+    panic!("Unknown interrupt\nstack_frame: {stack_frame:?}");
 }
 
 /// The interrupt handler which is called by a cpu `int3` breakpoint instruction
@@ -126,8 +111,6 @@ extern "x86-interrupt" fn page_fault_handler(
     panic!("Page fault");
 }
 
-
-
 /// Global variable to store the state of the keyboard
 /// e.g. whether shift is held
 static KEYBOARD: GlobalState<Keyboard<layouts::Us104Key, ScancodeSet1>> = GlobalState::new();
@@ -157,7 +140,7 @@ extern "x86-interrupt" fn keyboard_handler(_stack_frame: InterruptStackFrame) {
     // SAFETY:
     // This function is a hardware interrupt handler, so it must tell the interrupt controller that the handler has completed before exiting.
     unsafe {
-        end_interrupt();
+        end_interrupt(InterruptIndex::Keyboard.as_u8());
     }
 }
 
@@ -178,14 +161,12 @@ extern "x86-interrupt" fn double_fault_handler(
 
 /// The interrupt handler which is called for the PIC timer interrupt
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    println!("Timer interrupt");
-    
     poll_tasks();
     
     // SAFETY:
     // This function is a hardware interrupt handler, so it must tell the interrupt controller that the handler has completed before exiting.
     unsafe {
-        end_interrupt();
+        end_interrupt(InterruptIndex::Timer.as_u8());
     }
 }
 

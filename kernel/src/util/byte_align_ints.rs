@@ -14,6 +14,7 @@ macro_rules! byte_align_int {
         /// `] in little-endian format, but has an align of 1.
         /// This is useful for handling data structures with fields which are not aligned.
         #[derive(Clone, Copy, PartialEq, Eq)]
+        #[repr(transparent)]
         pub struct $type_name([u8; $num_bytes]);
 
         impl $type_name {

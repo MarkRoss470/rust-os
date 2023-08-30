@@ -2,6 +2,8 @@
 
 use core::fmt::Debug;
 
+use x86_64::PhysAddr;
+
 use crate::{println, util::iterator_list_debug::IteratorListDebug};
 
 use super::{ChecksumError, SdtHeader};
@@ -259,7 +261,9 @@ impl MadtRecord {
             value
         }
 
+        // The first byte of a record is always a number indicating the type of record
         let variant: u8 = read_from(&mut read_ptr);
+        // The second byte is always the length of the record in bytes
         let length: u8 = read_from(&mut read_ptr);
 
         let record = match variant {
@@ -383,6 +387,10 @@ pub struct Madt {
     records_end: *const MadtRecord,
 }
 
+// SAFETY: Currently there is no multithreading
+// TODO: when implementing multiprocessing, review this code
+unsafe impl Send for Madt {}
+
 impl Madt {
     /// Reads the MADT from the given pointer
     pub unsafe fn read(ptr: *const Self) -> Result<Self, ChecksumError> {
@@ -429,15 +437,46 @@ impl Madt {
             }
         })
     }
+
+    /// Gets the physical address of the local APIC register space
+    pub fn local_apic_address(&self) -> PhysAddr {
+        let address = self
+            .records()
+            .find_map(|record| {
+                if let MadtRecord::LocalApicAddressOverride { address, .. } = record {
+                    Some(address)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(self.local_apic_address as u64);
+
+        PhysAddr::new(address)
+    }
+
+    /// Gets the [`header`][Self::header] field
+    pub fn header(&self) -> &SdtHeader {
+        &self.header
+    }
+    /// Gets the [`flags`][Self::flags] field
+    pub fn flags(&self) -> MadtFlags {
+        self.flags
+    }
 }
 
 impl Debug for Madt {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Madt")
             .field("header", &self.header)
-            .field("local_apic_address", &format_args!("{:#x}", self.local_apic_address))
+            .field(
+                "local_apic_address",
+                &format_args!("{:#x}", self.local_apic_address),
+            )
             .field("flags", &self.flags)
-            .field("records", &IteratorListDebug::new_with_default_formatting(self.records()))
+            .field(
+                "records",
+                &IteratorListDebug::new_with_default_formatting(self.records()),
+            )
             .finish()
     }
 }

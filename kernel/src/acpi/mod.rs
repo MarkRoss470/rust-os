@@ -1,15 +1,30 @@
 //! Structs to parse the ACPI tables, based on [the ACPI spec].
-//! 
+//!
 //! [the ACPI spec]: https://uefi.org/specs/ACPI/6.5/index.html
 
 use core::fmt::Debug;
 
 use crate::{acpi::rsdp::Rsdp, println};
 
+use self::{
+    fadt::Fadt,
+    madt::Madt,
+    rsdt::{Rsdt, SystemDescriptionTable},
+};
+
 mod fadt;
+pub mod local_apic;
 mod madt;
 mod rsdp;
 mod rsdt;
+
+#[derive(Debug)]
+pub struct AcpiCache {
+    pub rsdp: Rsdp,
+    pub system_description_table: SystemDescriptionTable,
+    pub fadt: Option<Fadt>,
+    pub madt: Option<Madt>,
+}
 
 /// Initialises ACPI, using the given RSDP table.
 ///
@@ -17,7 +32,7 @@ mod rsdt;
 /// This function may only be called once.
 /// The given [`PhysAddr`] must point to a valid RSDP structure which describes the system.
 /// All of physical memory must be mapped at the virtual address `physical_memory_offset`
-pub unsafe fn init(rsdp_addr: u64, physical_memory_offset: u64) {
+pub unsafe fn init(rsdp_addr: u64, physical_memory_offset: u64) -> AcpiCache {
     println!("Initialising ACPI from RSDP at {rsdp_addr:#x}");
 
     let rsdp_virtual_addr = physical_memory_offset + rsdp_addr;
@@ -28,10 +43,14 @@ pub unsafe fn init(rsdp_addr: u64, physical_memory_offset: u64) {
 
     system_table.list_tables();
 
-    let fadt = system_table.fadt().unwrap();
-    let madt = system_table.madt().unwrap();
+    println!("{:#?}", system_table.madt().unwrap());
 
-    println!("{madt:#?}");
+    AcpiCache {
+        rsdp,
+        fadt: system_table.fadt().ok(),
+        madt: system_table.madt().ok(),
+        system_description_table: system_table,
+    }
 }
 
 /// An error occurring while calculating the checksum of an ACPI table.

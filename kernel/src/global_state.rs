@@ -3,6 +3,7 @@
 use spin::{Mutex, MutexGuard};
 use x86_64::structures::paging::OffsetPageTable;
 
+use crate::acpi::AcpiCache;
 use crate::allocator::{LinkedListAllocator, ALLOCATOR};
 use crate::cpu::{BootInfoFrameAllocator, PhysicalMemoryAccessor};
 
@@ -43,7 +44,7 @@ impl<T> GlobalState<T> {
     }
 
     /// Lock the contained [`Mutex`], wrapped in a [`GlobalStateLock`]
-    /// 
+    ///
     /// # Panics
     /// If the [`GlobalState`] is already locked
     pub fn lock(&self) -> GlobalStateLock<T> {
@@ -78,13 +79,13 @@ impl<'a, T> core::ops::Deref for GlobalStateLock<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.0.deref().as_ref().unwrap()
+        self.0.deref().as_ref().expect("GlobalState should have been initialised")
     }
 }
 
 impl<'a, T> core::ops::DerefMut for GlobalStateLock<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.0.deref_mut().as_mut().unwrap()
+        self.0.deref_mut().as_mut().expect("GlobalState should have been initialised")
     }
 }
 
@@ -99,6 +100,8 @@ pub struct KernelState {
     pub heap_allocator: &'static GlobalState<KernelHeapAllocator>,
     /// Helper struct to access physical memory locations
     pub physical_memory_accessor: GlobalState<PhysicalMemoryAccessor>,
+    /// Cache of ACPI tables
+    pub apci_cache: GlobalState<AcpiCache>,
 }
 
 /// The global kernel state
@@ -107,6 +110,7 @@ pub static KERNEL_STATE: KernelState = KernelState {
     frame_allocator: GlobalState::new(),
     heap_allocator: ALLOCATOR.get(),
     physical_memory_accessor: GlobalState::new(),
+    apci_cache: GlobalState::new(),
 };
 
 /// A type alias for the kernel's page table. This makes it easier to change the exact type in future.
