@@ -101,7 +101,7 @@ pub struct KernelState {
     /// Helper struct to access physical memory locations
     pub physical_memory_accessor: GlobalState<PhysicalMemoryAccessor>,
     /// Cache of ACPI tables
-    pub apci_cache: GlobalState<AcpiCache>,
+    pub acpi_cache: GlobalState<AcpiCache>,
 }
 
 /// The global kernel state
@@ -110,7 +110,7 @@ pub static KERNEL_STATE: KernelState = KernelState {
     frame_allocator: GlobalState::new(),
     heap_allocator: ALLOCATOR.get(),
     physical_memory_accessor: GlobalState::new(),
-    apci_cache: GlobalState::new(),
+    acpi_cache: GlobalState::new(),
 };
 
 /// A type alias for the kernel's page table. This makes it easier to change the exact type in future.

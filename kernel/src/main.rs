@@ -123,7 +123,7 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
             boot_info.physical_memory_offset.into_option().unwrap(),
         )
     };
-    KERNEL_STATE.apci_cache.init(acpi_cache);
+    KERNEL_STATE.acpi_cache.init(acpi_cache);
 
     println!(
         "Physical memory offset: {:#x}",

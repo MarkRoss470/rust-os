@@ -115,7 +115,7 @@ pub unsafe fn init_local_apic() -> Result<(), ()> {
     println!("Getting apic addr");
 
     let local_apic_addr = KERNEL_STATE
-        .apci_cache
+        .acpi_cache
         .lock()
         .madt
         .as_ref()
