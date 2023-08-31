@@ -181,18 +181,6 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     //x86_64::instructions::interrupts::disable();
     x86_64::instructions::interrupts::int3();
 
-    lspci();
-
-    for i in 0.. {
-        if i % 100_000 == 0 {
-            println!(
-                "({}, {})",
-                cpu::interrupt_controllers::PIC_EOI.load(core::sync::atomic::Ordering::Relaxed),
-                cpu::interrupt_controllers::APIC_EOI.load(core::sync::atomic::Ordering::Relaxed)
-            );
-        }
-    }
-
     shell_loop()
 }
 

@@ -139,10 +139,11 @@ pub unsafe fn init_local_apic() -> Result<(), ()> {
     // to prevent race conditions where EOI is sent to the wrong controller
     without_interrupts(|| {
         let mut local_apic =
-        // SAFETY: 
+        // SAFETY: This function is only called once per core.
+        // The pointer was taken from the MADT so the APIC is definitely there.
             unsafe { LocalApicRegisters::new(local_apic_registers_virt_addr.as_mut_ptr()) };
 
-        local_apic.debug_registers();
+        // local_apic.debug_registers();
 
         let mut controller = CURRENT_CONTROLLER.lock();
         // SAFETY: The local APIC is about to be enabled so interrupts will continue to occur
@@ -160,17 +161,12 @@ pub unsafe fn init_local_apic() -> Result<(), ()> {
         // SAFETY: The IDT is set up so the CPU can receive interrupts.
         unsafe { local_apic.enable(0xFF) };
 
-        // SAFETY: 
+        // SAFETY: This interrupt vector is set up to receive timer interrupts
         unsafe { local_apic.enable_timer(InterruptIndex::Timer.as_u8() as _) };
 
-        local_apic.debug_registers();
+        // local_apic.debug_registers();
 
         *controller = InterruptController::LocalApic(local_apic);
-
-        match *controller {
-            InterruptController::None | InterruptController::Pic(_) => unreachable!(),
-            InterruptController::LocalApic(ref mut apic) => apic.send_debug_self_interrupt(0),
-        };
     });
 
     Ok(())
