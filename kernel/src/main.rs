@@ -109,21 +109,7 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
     };
 
     KERNEL_STATE.page_table.init(page_table);
-
     println!("Initialised page table");
-
-    init_graphics(boot_info.framebuffer.as_mut().unwrap());
-    println!("Initialised graphics");
-
-    // SAFETY: This function is only called once.
-    // The bootloader gets the rsdp pointer from the BIOS or UEFI so it is valid and accurate.
-    let acpi_cache = unsafe {
-        acpi::init(
-            boot_info.rsdp_addr.into_option().unwrap(),
-            boot_info.physical_memory_offset.into_option().unwrap(),
-        )
-    };
-    KERNEL_STATE.acpi_cache.init(acpi_cache);
 
     println!(
         "Physical memory offset: {:#x}",
@@ -141,6 +127,28 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
 
     println!("Initialised heap");
 
+    init_graphics(boot_info.framebuffer.as_mut().unwrap());
+    println!("Initialised graphics");
+
+    log::log!(log::Level::Error, "Test");
+    log::warn!("Test");
+    log::error!("Test");
+
+    // SAFETY: This function is only called once
+    unsafe {
+        cpu::init_interrupts();
+    }
+
+    // SAFETY: This function is only called once.
+    // The bootloader gets the rsdp pointer from the BIOS or UEFI so it is valid and accurate.
+    let acpi_cache = unsafe {
+        acpi::init(
+            boot_info.rsdp_addr.into_option().unwrap(),
+            boot_info.physical_memory_offset.into_option().unwrap(),
+        )
+    };
+    KERNEL_STATE.acpi_cache.init(acpi_cache);
+
     // SAFETY: This function is only called once
     unsafe { pci::init() }
 
@@ -151,6 +159,13 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
     // SAFETY: This function is only called once.
     // TODO: This doesn't need unwrapping if the PIC is working
     unsafe { cpu::interrupt_controllers::init_local_apic().unwrap() };
+
+    // SAFETY: This function is only called once.
+    // The core is set up to receive interrupts as `init_interrupts` has been called above.
+    unsafe { cpu::interrupt_controllers::init_io_apic().unwrap() };
+
+    // SAFETY: This function is only called once.
+    unsafe { cpu::init_ps2() };
 
     println!("Finished initialising kernel");
 }

@@ -454,6 +454,34 @@ impl Madt {
         PhysAddr::new(address)
     }
 
+    /// Gets the physical address of the I/O APIC
+    /// 
+    /// # Panics
+    /// If the system has multiple APICs
+    /// TODO: implement this
+    pub fn io_apic_address(&self) -> PhysAddr {
+        let mut records = self.records();
+
+        let address = records
+            .find_map(|record| {
+                if let MadtRecord::IoApic { address, .. } = record {
+                    Some(address)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+
+        // If there are more IO APICs after the first one
+        if records
+            .any(|record| matches!(&record, MadtRecord::IoApic { .. }))
+        {
+            todo!("Multiple I/O APICs");
+        }
+
+        PhysAddr::new(address as u64)
+    }
+
     /// Gets the [`header`][Self::header] field
     pub fn header(&self) -> &SdtHeader {
         &self.header

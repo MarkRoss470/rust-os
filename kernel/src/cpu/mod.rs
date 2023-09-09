@@ -5,6 +5,8 @@
 mod frame_allocator;
 mod idt;
 pub mod interrupt_controllers;
+pub mod ps2;
+
 
 use core::arch::asm;
 
@@ -21,6 +23,9 @@ use x86_64::VirtAddr;
 
 use crate::global_state::KERNEL_STATE;
 use crate::println;
+
+use self::ps2::Ps2Controller8042;
+use self::ps2::PS2_CONTROLLER;
 
 /// Returns a mutable reference to the active level 4 table.
 ///
@@ -99,15 +104,12 @@ impl PhysicalMemoryAccessor {
     }
 }
 
-
 /// This function:
-/// * Loads the GDT and IDT structures
 /// * Initialises the interrupt controller
-/// * Turns on interrupts
 /// * Constructs an [`OffsetPageTable`] and returns it
 ///
-/// # Safety:
-/// This function may only be called once, and must be called with kernel privileges.
+/// # Safety
+/// This function may only be called once.
 /// All of physical memory must be mapped starting at address given by `physical_memory_offset`
 pub unsafe fn init_cpu(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
     enable_sse();
@@ -137,6 +139,45 @@ pub unsafe fn init_cpu(physical_memory_offset: VirtAddr) -> OffsetPageTable<'sta
     // The given level_4_table is correct as long as `physical_memory_offset` is correct,
     // as is `physical_memory_offset` itself.
     unsafe { OffsetPageTable::new(level_4_table, physical_memory_offset) }
+}
+
+/// This function:
+/// * Loads the GDT and IDT structures
+/// * Turns on interrupts
+///
+/// # Safety
+/// This function may only be called once.
+/// This function must be called after [`init_cpu`]
+pub unsafe fn init_interrupts() {
+    // Load the IDT structure, which defines interrupt and exception handlers
+    // SAFETY:
+    // This function is only called once and this is the only call-site of idt::init
+    // `init_gdt` must have been called as it is called in `init_cpu`, which has been called before this function
+    unsafe { idt::init() }
+
+    // Initialise the interrupt controller
+    // SAFETY:
+    // This function is only called once and this is the only call-site of idt::init_pic
+    unsafe { interrupt_controllers::init_pic() }
+
+    // Enable interrupts on the CPU
+    x86_64::instructions::interrupts::enable();
+}
+
+/// Initialises the 8042 PS/2 controller if it is present
+/// 
+/// # Safety
+/// This function may only be called once.
+pub unsafe fn init_ps2() {
+    // SAFETY: This function is only called once
+    unsafe {
+        if let Some(controller) = Ps2Controller8042::new() {
+            println!("{controller:?}");
+            PS2_CONTROLLER.init(controller.unwrap())
+        } else {
+            println!("No PS/2 Controller");
+        }
+    }
 }
 
 /// Enables SSE (SIMD float processing) by writing values into the `cr0` and `cr4` registers
@@ -185,9 +226,7 @@ pub unsafe fn init_frame_allocator(memory_map: &'static MemoryRegions) {
     // SAFETY:
     // `memory_map` is valid as a safety condition of this function
     let frame_allocator = unsafe { BootInfoFrameAllocator::new(memory_map) };
-    KERNEL_STATE
-        .frame_allocator
-        .init(frame_allocator);
+    KERNEL_STATE.frame_allocator.init(frame_allocator);
 }
 
 /// Tests that floating point numbers are usable and work correctly

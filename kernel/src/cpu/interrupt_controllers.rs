@@ -1,14 +1,15 @@
+//! Code to manage different interrupt handlers
+
 use core::{fmt::Debug, sync::atomic::AtomicU64};
 
 use pic8259::ChainedPics;
 use spin::Mutex;
-use x86_64::{
-    instructions::interrupts::without_interrupts,
-    structures::paging::{frame::PhysFrameRange, PhysFrame},
-};
+use x86_64::instructions::interrupts::without_interrupts;
 
 use crate::{
-    acpi::local_apic::LocalApicRegisters, cpu::idt::InterruptIndex, global_state::KERNEL_STATE,
+    acpi::{io_apic::IoApicRegisters, local_apic::LocalApicRegisters},
+    cpu::idt::InterruptIndex,
+    global_state::KERNEL_STATE,
     println,
 };
 
@@ -122,26 +123,13 @@ pub unsafe fn init_local_apic() -> Result<(), ()> {
         .ok_or(())?
         .local_apic_address();
 
-    let start_frame = PhysFrame::containing_address(local_apic_addr);
-
-    println!("Mapping memory");
-
-    let local_apic_registers_virt_addr =
-        KERNEL_STATE
-            .physical_memory_accessor
-            .lock()
-            .map_frames(PhysFrameRange {
-                start: start_frame,
-                end: start_frame + 2,
-            });
-
     // Disable interrupts while changing controller
     // to prevent race conditions where EOI is sent to the wrong controller
     without_interrupts(|| {
         let mut local_apic =
         // SAFETY: This function is only called once per core.
         // The pointer was taken from the MADT so the APIC is definitely there.
-            unsafe { LocalApicRegisters::new(local_apic_registers_virt_addr.as_mut_ptr()) };
+            unsafe { LocalApicRegisters::new(local_apic_addr) };
 
         // local_apic.debug_registers();
 
@@ -172,10 +160,49 @@ pub unsafe fn init_local_apic() -> Result<(), ()> {
     Ok(())
 }
 
+/// Initialises the I/O APIC, and sets interrupts from PS/2 devices to be sent to this core.
+///
+/// # Safety
+/// * This function may only be called once on the whole system,
+/// unlike [`init_local_apic`] which may be called once per core.
+/// * The core which this function is called on must be set up to receive interrupts from PS/2 devices
+/// on their respective [`InterruptIndex`]es.
+/// 
+/// # Panics
+/// If this core's local APIC is not set up, i.e. if [`init_local_apic`] hasn't been called
+pub unsafe fn init_io_apic() -> Result<(), ()> {
+    let acpi_cache = KERNEL_STATE.acpi_cache.lock();
+    let madt = acpi_cache.madt.as_ref().ok_or(())?;
+
+    let io_apic_addr = madt.io_apic_address();
+
+    // SAFETY: The pointer was fetched from ACPI tables so it must be valid.
+    // This function is only called once so `IoApicRegisters::new` will only be called once.
+    let mut io_apic = unsafe { IoApicRegisters::new(io_apic_addr) };
+
+    let id = match *CURRENT_CONTROLLER.lock() {
+        InterruptController::None | InterruptController::Pic(_) => panic!("Local APIC not set up"),
+        InterruptController::LocalApic(ref apic) => apic.get_id(),
+    };
+
+    // SAFETY: This core's local APIC is set up to receive interrupts.
+    unsafe {
+        io_apic
+            .set_ps2_primary_port_interrupt(id, InterruptIndex::Ps2PrimaryPort.as_u8())
+            .unwrap();
+        io_apic
+            .set_ps2_secondary_port_interrupt(id, InterruptIndex::Ps2SecondaryPort.as_u8())
+            .unwrap();
+    }
+
+    Ok(())
+}
+
 /// Sends an interrupt to the core this function is called from with the given vector
 ///
 /// # Safety
 /// This function is for debugging purposes only and is not guaranteed to be sound.
+#[allow(dead_code)]
 pub unsafe fn send_debug_self_interrupt(vector: u8) {
     let callback = match *CURRENT_CONTROLLER.lock() {
         InterruptController::None | InterruptController::Pic(_) => {

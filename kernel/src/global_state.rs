@@ -1,11 +1,14 @@
 //! Types for managing the kernel's global state
 
+use core::sync::atomic::AtomicUsize;
+
 use spin::{Mutex, MutexGuard};
 use x86_64::structures::paging::OffsetPageTable;
 
 use crate::acpi::AcpiCache;
 use crate::allocator::{LinkedListAllocator, ALLOCATOR};
 use crate::cpu::{BootInfoFrameAllocator, PhysicalMemoryAccessor};
+use crate::println;
 
 /// A piece of global state.
 #[derive(Debug)]
@@ -75,17 +78,25 @@ impl<T> GlobalState<T> {
 /// and will panic on deref if this is not the case.
 pub struct GlobalStateLock<'a, T>(MutexGuard<'a, Option<T>>);
 
+impl<'a, T> GlobalStateLock<'a, T> {
+    /// Panics with a message including the name of the type in the lock.
+    fn panic() -> ! {
+        println!("Type is {}", core::any::type_name::<T>());
+        panic!("GlobalState should have been initialised")
+    }
+}
+
 impl<'a, T> core::ops::Deref for GlobalStateLock<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.0.deref().as_ref().expect("GlobalState should have been initialised")
+        self.0.deref().as_ref().unwrap_or_else(|| Self::panic())
     }
 }
 
 impl<'a, T> core::ops::DerefMut for GlobalStateLock<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.0.deref_mut().as_mut().expect("GlobalState should have been initialised")
+        self.0.deref_mut().as_mut().unwrap_or_else(|| Self::panic())
     }
 }
 
@@ -102,6 +113,22 @@ pub struct KernelState {
     pub physical_memory_accessor: GlobalState<PhysicalMemoryAccessor>,
     /// Cache of ACPI tables
     pub acpi_cache: GlobalState<AcpiCache>,
+
+    /// How many timer interrupts there have been while the kernel was running
+    ticks: AtomicUsize,
+}
+
+impl KernelState {
+    /// Gets the number of [`ticks`][KernelState::ticks] since the kernel was initialised
+    pub fn ticks(&self) -> usize {
+        self.ticks.load(core::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Adds one to [`ticks`][KernelState::ticks]
+    pub fn increment_ticks(&self) {
+        self.ticks
+            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// The global kernel state
@@ -111,6 +138,7 @@ pub static KERNEL_STATE: KernelState = KernelState {
     heap_allocator: ALLOCATOR.get(),
     physical_memory_accessor: GlobalState::new(),
     acpi_cache: GlobalState::new(),
+    ticks: AtomicUsize::new(0),
 };
 
 /// A type alias for the kernel's page table. This makes it easier to change the exact type in future.
