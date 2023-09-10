@@ -34,6 +34,7 @@ extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
 use bootloader_api::{info::MemoryRegions, BootInfo, BootloaderConfig};
+use log::Log;
 use x86_64::VirtAddr;
 
 #[macro_use]
@@ -56,13 +57,15 @@ use graphics::init_graphics;
 use input::{init_keybuffer, pop_key};
 use pci::lspci;
 
+use crate::graphics::{Colour, WRITER};
+
 /// This function is called on panic.
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    println!("{info}");
-
     x86_64::instructions::interrupts::disable();
+
+    println!("{info}");
 
     loop {
         x86_64::instructions::hlt();
@@ -94,6 +97,62 @@ fn debug_memory_regions(memory_regions: &MemoryRegions) {
     println!();
 }
 
+/// The kernel's implementation of the [`Log`] trait for printing logs
+struct KernelLogger;
+
+impl Log for KernelLogger {
+    fn enabled(&self, _: &log::Metadata) -> bool {
+        true
+    }
+
+    fn log(&self, record: &log::Record) {
+        print!("[");
+
+        let level_str = match record.level() {
+            log::Level::Error => {
+                if let Ok(mut w) = WRITER.try_locked_if_init() {
+                    w.set_colour(Colour::RED)
+                }
+                "ERROR"
+            }
+            log::Level::Warn => {
+                if let Ok(mut w) = WRITER.try_locked_if_init() {
+                    w.set_colour(Colour::YELLOW)
+                }
+                "WARNING"
+            }
+            log::Level::Info => "INFO",
+            log::Level::Debug => "DEBUG",
+            log::Level::Trace => "TRACE",
+        };
+
+        print!("{level_str}");
+
+        if let Ok(mut w) = WRITER.try_locked_if_init() {
+            w.set_colour(Colour::WHITE)
+        }
+
+        if let Some(file) = record.module_path() {
+            print!(" {file}");
+            if let Some(line) = record.line() {
+                print!(":{line}")
+            }
+        }
+
+        print!("] ");
+
+        println!("{}", record.args());
+    }
+
+    fn flush(&self) {}
+}
+
+/// Sets up logging for the kernel
+fn init_log() {
+    log::set_logger(&KernelLogger).expect("Logging should have initialised");
+    log::set_max_level(log::LevelFilter::Trace);
+}
+
 /// Initialises the kernel and constructs a [`KernelState`] struct to represent it.
 ///
 /// # Safety:
@@ -107,6 +166,8 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
             boot_info.physical_memory_offset.into_option().unwrap(),
         ))
     };
+
+    init_log();
 
     KERNEL_STATE.page_table.init(page_table);
     println!("Initialised page table");

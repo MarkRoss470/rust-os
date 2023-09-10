@@ -42,6 +42,9 @@ impl Colour {
     pub const GREEN: Self = Self::from_rgb(0, 255, 0);
     /// Blue
     pub const BLUE: Self = Self::from_rgb(0, 0, 255);
+
+    /// Yellow
+    pub const YELLOW: Self = Self::from_rgb(255, 255, 0);
 }
 
 /// The size in pixels of each character
