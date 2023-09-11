@@ -181,6 +181,9 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
     // SAFETY: The provided `boot_info` is correct
     unsafe { cpu::init_frame_allocator(&boot_info.memory_regions) };
 
+    // SAFETY: This function is only called once.
+    unsafe { cpu::init_kernel_stack() }
+
     println!("Initialised frame allocator");
 
     // SAFETY: This function is only called once. The provided `boot_info` is correct, so so are `offset_page_table` and `frame_allocator`

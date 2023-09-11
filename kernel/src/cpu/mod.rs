@@ -3,10 +3,10 @@
 
 // pub mod allocator;
 mod frame_allocator;
+pub mod gdt;
 mod idt;
 pub mod interrupt_controllers;
 pub mod ps2;
-
 
 use core::arch::asm;
 
@@ -14,6 +14,7 @@ use bootloader_api::info::MemoryRegions;
 pub use frame_allocator::BootInfoFrameAllocator;
 
 use x86_64::structures::paging::frame::PhysFrameRange;
+use x86_64::structures::paging::FrameAllocator;
 use x86_64::structures::paging::Mapper;
 use x86_64::structures::paging::OffsetPageTable;
 use x86_64::structures::paging::Page;
@@ -24,6 +25,7 @@ use x86_64::VirtAddr;
 use crate::global_state::KERNEL_STATE;
 use crate::println;
 
+use self::gdt::init_gdt;
 use self::ps2::Ps2Controller8042;
 use self::ps2::PS2_CONTROLLER;
 
@@ -104,6 +106,58 @@ impl PhysicalMemoryAccessor {
     }
 }
 
+/// The size in frames of the kernel stack
+const KERNEL_STACK_SIZE: u64 = 100;
+
+/// Initialises the kernel stack to a known size.
+/// To prevent data from being overwritten, any pages which are already mapped by the bootloader will not be changed.
+pub unsafe fn init_kernel_stack() {
+    let mut stack_ptr: u64;
+
+    // SAFETY: This assembly code reads the value of the rsp "stack pointer" register.
+    // This only changes the value of `stack_ptr`, so it is sound.
+    unsafe {
+        asm!(
+            "mov {stack_ptr}, rsp",
+            stack_ptr = out(reg) stack_ptr
+        )
+    }
+
+    let stack_base_page = Page::containing_address(VirtAddr::new(stack_ptr));
+
+    let stack_ptr_approx = (&stack_ptr) as *const _ as u64;
+    println!("{stack_ptr:#x}, {stack_ptr_approx:#x}");
+
+    // Check that the stack pointer is reasonable.
+    // `stack_ptr_approx` is the address of a variable in the call frame at `stack_ptr`,
+    // so the difference between them should be quite small.
+    debug_assert!((stack_ptr_approx - stack_ptr) < 0x100);
+
+    let mut mapper = KERNEL_STATE.page_table.lock();
+    let mut allocator = KERNEL_STATE.frame_allocator.lock();
+
+    for i in 0..KERNEL_STACK_SIZE {
+        let translate_page = &mapper.translate_page(stack_base_page - i);
+        if translate_page.is_err() {
+            // SAFETY: This page was previously not mapped, as `translate_page` returned an `Err`.
+            // This means it will not overwrite any data to map the page.
+            unsafe {
+                mapper
+                    .map_to(
+                        stack_base_page - i,
+                        allocator.allocate_frame().unwrap(),
+                        PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE
+                            | PageTableFlags::NO_EXECUTE,
+                        &mut *allocator,
+                    )
+                    .expect("Mapping should have succeeded")
+                    .flush(); // Flush the TLB entry for this page
+            }
+        }
+    }
+}
+
 /// This function:
 /// * Initialises the interrupt controller
 /// * Constructs an [`OffsetPageTable`] and returns it
@@ -114,18 +168,8 @@ impl PhysicalMemoryAccessor {
 pub unsafe fn init_cpu(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
     enable_sse();
 
-    // Load the IDT structure, which defines interrupt and exception handlers
-    // SAFETY:
-    // init_cpu is only called once and this is the only call-site of idt::init
-    unsafe { idt::init() }
-
-    // Initialise the interrupt controller
-    // SAFETY:
-    // init_cpu is only called once and this is the only call-site of idt::init_pic
-    unsafe { interrupt_controllers::init_pic() }
-
-    // Enable interrupts on the CPU
-    x86_64::instructions::interrupts::enable();
+    // SAFETY: This function is only called once.
+    unsafe { init_gdt() }
 
     // SAFETY:
     // All of physical memory is mapped at the given address as a safety condition of init_mem
@@ -165,7 +209,7 @@ pub unsafe fn init_interrupts() {
 }
 
 /// Initialises the 8042 PS/2 controller if it is present
-/// 
+///
 /// # Safety
 /// This function may only be called once.
 pub unsafe fn init_ps2() {
