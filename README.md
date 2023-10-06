@@ -19,3 +19,14 @@ Current features:
  - Keyboard input using interrupts (this relies on an emulated PS/2 keyboard, so it won't work on all hardware)
  - Kernel heap allocator
  - Basic PCI device enumeration support
+
+## Features In Development
+
+- ACPI support using the ACPICA C library. I am writing my own rust bindings to this library as no existing bindings exist. The source code for these bindings are [here](https://github.com/MarkRoss470/acpica-rust-bindings)
+- XHCI support for interacting with USB devices. This is currently blocked by support for ACPI as this is needed to handle PCI interrupts, which is necessary to support XHCI
+
+## Screenshots
+
+Enumerating PCI devices:
+
+![The operating system running under QEMU. The screen is mostly black but with some white text showing the PCI devices connected to the virtual machine](images/lspci.png)
