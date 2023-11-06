@@ -401,11 +401,11 @@ impl Madt {
 
         let local_apic_address =
             // SAFETY: This read is within the table
-            unsafe { core::ptr::read(ptr.byte_offset(SdtHeader::TABLE_START) as *const _) };
+            unsafe { core::ptr::read_unaligned(ptr.byte_offset(SdtHeader::TABLE_START) as *const _) };
 
         let flags =
             // SAFETY: This read is within the table
-            unsafe { core::ptr::read(ptr.byte_offset(SdtHeader::TABLE_START + 4) as *const _) };
+            unsafe { core::ptr::read_unaligned(ptr.byte_offset(SdtHeader::TABLE_START + 4) as *const _) };
 
         // SAFETY: This pointer points to the first record in the table
         let records_start = unsafe { ptr.byte_offset(SdtHeader::TABLE_START + 8) as *const _ };

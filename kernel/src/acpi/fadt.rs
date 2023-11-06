@@ -94,8 +94,6 @@ impl Debug for BootArchitectureFlags {
     }
 }
 
-
-
 #[repr(C)]
 pub struct FadtMainFields {
     facs_addr: u32,
@@ -144,7 +142,6 @@ pub struct FadtMainFields {
     flags: u32,
 }
 
-#[derive(Debug)]
 pub struct Fadt {
     header: SdtHeader,
     main_fields: FadtMainFields,
@@ -233,130 +230,140 @@ pub struct FadtVersion6Fields {
 }
 
 #[rustfmt::skip]
-impl FadtMainFields {
-    /// Gets the [`firmware_control`][Self::firmware_control] field
-    pub fn facs_addr(&self) -> u32 { self.facs_addr }
-    /// Gets the [`smi_command_port`][Self::smi_command_port] field
-    pub fn dsdt_addr(&self) -> u32 { self.dsdt_addr }
-
+impl Fadt {
     /// Gets the [`preferred_power_management_profile`][Self::preferred_power_management_profile] field
     pub fn preferred_power_management_profile(&self) -> PowerManagementProfile {
-        PowerManagementProfile::from_u8(self.preferred_power_management_profile)
+        PowerManagementProfile::from_u8(self.main_fields.preferred_power_management_profile)
     }
 
     /// Gets the [`sci_interrupt`][Self::sci_interrupt] field
-    pub fn sci_interrupt(&self) -> u16 { self.sci_interrupt }
+    pub fn sci_interrupt(&self) -> u16 { self.main_fields.sci_interrupt }
     /// Gets the [`smi_command_port`][Self::smi_command_port] field
-    pub fn smi_command_port(&self) -> u32 { self.smi_command_port }
+    pub fn smi_command_port(&self) -> u32 { self.main_fields.smi_command_port }
     /// Gets the [`acpi_enable`][Self::acpi_enable] field
-    pub fn acpi_enable(&self) -> u8 { self.acpi_enable }
+    pub fn acpi_enable(&self) -> u8 { self.main_fields.acpi_enable }
     /// Gets the [`acpi_disable`][Self::acpi_disable] field
-    pub fn acpi_disable(&self) -> u8 { self.acpi_disable }
+    pub fn acpi_disable(&self) -> u8 { self.main_fields.acpi_disable }
     /// Gets the [`s4bios_req`][Self::s4bios_req] field
-    pub fn s4bios_req(&self) -> u8 { self.s4bios_req }
+    pub fn s4bios_req(&self) -> u8 { self.main_fields.s4bios_req }
     /// Gets the [`pstate_control`][Self::pstate_control] field
-    pub fn pstate_control(&self) -> u8 { self.pstate_control }
+    pub fn pstate_control(&self) -> u8 { self.main_fields.pstate_control }
     /// Gets the [`pm1a_event_block`][Self::pm1a_event_block] field
-    pub fn pm1a_event_block(&self) -> u32 { self.pm1a_event_block }
+    pub fn pm1a_event_block(&self) -> u32 { self.main_fields.pm1a_event_block }
     /// Gets the [`pm1b_event_block`][Self::pm1b_event_block] field
-    pub fn pm1b_event_block(&self) -> u32 { self.pm1b_event_block }
+    pub fn pm1b_event_block(&self) -> u32 { self.main_fields.pm1b_event_block }
     /// Gets the [`pm1a_control_block`][Self::pm1a_control_block] field
-    pub fn pm1a_control_block(&self) -> u32 { self.pm1a_control_block }
+    pub fn pm1a_control_block(&self) -> u32 { self.main_fields.pm1a_control_block }
     /// Gets the [`pm1b_control_block`][Self::pm1b_control_block] field
-    pub fn pm1b_control_block(&self) -> u32 { self.pm1b_control_block }
+    pub fn pm1b_control_block(&self) -> u32 { self.main_fields.pm1b_control_block }
     /// Gets the [`pm2_control_block`][Self::pm2_control_block] field
-    pub fn pm2_control_block(&self) -> u32 { self.pm2_control_block }
+    pub fn pm2_control_block(&self) -> u32 { self.main_fields.pm2_control_block }
     /// Gets the [`pm_timer_block`][Self::pm_timer_block] field
-    pub fn pm_timer_block(&self) -> u32 { self.pm_timer_block }
+    pub fn pm_timer_block(&self) -> u32 { self.main_fields.pm_timer_block }
     /// Gets the [`gpe0_block`][Self::gpe0_block] field
-    pub fn gpe0_block(&self) -> u32 { self.gpe0_block }
+    pub fn gpe0_block(&self) -> u32 { self.main_fields.gpe0_block }
     /// Gets the [`gpe1_block`][Self::gpe1_block] field
-    pub fn gpe1_block(&self) -> u32 { self.gpe1_block }
+    pub fn gpe1_block(&self) -> u32 { self.main_fields.gpe1_block }
     /// Gets the [`pm1_event_length`][Self::pm1_event_length] field
-    pub fn pm1_event_length(&self) -> u8 { self.pm1_event_length }
+    pub fn pm1_event_length(&self) -> u8 { self.main_fields.pm1_event_length }
     /// Gets the [`pm1_control_length`][Self::pm1_control_length] field
-    pub fn pm1_control_length(&self) -> u8 { self.pm1_control_length }
+    pub fn pm1_control_length(&self) -> u8 { self.main_fields.pm1_control_length }
     /// Gets the [`pm2_control_length`][Self::pm2_control_length] field
-    pub fn pm2_control_length(&self) -> u8 { self.pm2_control_length }
+    pub fn pm2_control_length(&self) -> u8 { self.main_fields.pm2_control_length }
     /// Gets the [`pm_timer_length`][Self::pm_timer_length] field
-    pub fn pm_timer_length(&self) -> u8 { self.pm_timer_length }
+    pub fn pm_timer_length(&self) -> u8 { self.main_fields.pm_timer_length }
     /// Gets the [`gpe0_length`][Self::gpe0_length] field
-    pub fn gpe0_length(&self) -> u8 { self.gpe0_length }
+    pub fn gpe0_length(&self) -> u8 { self.main_fields.gpe0_length }
     /// Gets the [`gpe1_length`][Self::gpe1_length] field
-    pub fn gpe1_length(&self) -> u8 { self.gpe1_length }
+    pub fn gpe1_length(&self) -> u8 { self.main_fields.gpe1_length }
     /// Gets the [`gpe1_base`][Self::gpe1_base] field
-    pub fn gpe1_base(&self) -> u8 { self.gpe1_base }
+    pub fn gpe1_base(&self) -> u8 { self.main_fields.gpe1_base }
     /// Gets the [`c_state_control`][Self::c_state_control] field
-    pub fn c_state_control(&self) -> u8 { self.c_state_control }
+    pub fn c_state_control(&self) -> u8 { self.main_fields.c_state_control }
     /// Gets the [`worst_c2_latency`][Self::worst_c2_latency] field
-    pub fn worst_c2_latency(&self) -> u16 { self.worst_c2_latency }
+    pub fn worst_c2_latency(&self) -> u16 { self.main_fields.worst_c2_latency }
     /// Gets the [`worst_c3_latency`][Self::worst_c3_latency] field
-    pub fn worst_c3_latency(&self) -> u16 { self.worst_c3_latency }
+    pub fn worst_c3_latency(&self) -> u16 { self.main_fields.worst_c3_latency }
     /// Gets the [`flush_size`][Self::flush_size] field
-    pub fn flush_size(&self) -> u16 { self.flush_size }
+    pub fn flush_size(&self) -> u16 { self.main_fields.flush_size }
     /// Gets the [`flush_stride`][Self::flush_stride] field
-    pub fn flush_stride(&self) -> u16 { self.flush_stride }
+    pub fn flush_stride(&self) -> u16 { self.main_fields.flush_stride }
     /// Gets the [`duty_offset`][Self::duty_offset] field
-    pub fn duty_offset(&self) -> u8 { self.duty_offset }
+    pub fn duty_offset(&self) -> u8 { self.main_fields.duty_offset }
     /// Gets the [`duty_width`][Self::duty_width] field
-    pub fn duty_width(&self) -> u8 { self.duty_width }
+    pub fn duty_width(&self) -> u8 { self.main_fields.duty_width }
     /// Gets the [`day_alarm`][Self::day_alarm] field
-    pub fn day_alarm(&self) -> u8 { self.day_alarm }
+    pub fn day_alarm(&self) -> u8 { self.main_fields.day_alarm }
     /// Gets the [`month_alarm`][Self::month_alarm] field
-    pub fn month_alarm(&self) -> u8 { self.month_alarm }
+    pub fn month_alarm(&self) -> u8 { self.main_fields.month_alarm }
     /// Gets the [`century`][Self::century] field
-    pub fn century(&self) -> u8 { self.century }
+    pub fn century(&self) -> u8 { self.main_fields.century }
     /// Gets the [`boot_architecture_flags`][Self::boot_architecture_flags] field
-    pub fn boot_architecture_flags(&self) -> BootArchitectureFlags { self.boot_architecture_flags }
+    pub fn boot_architecture_flags(&self) -> BootArchitectureFlags { self.main_fields.boot_architecture_flags }
     /// Gets the [`flags`][Self::flags] field
-    pub fn flags(&self) -> u32 { self.flags }
+    pub fn flags(&self) -> u32 { self.main_fields.flags }
 }
 
-impl Debug for FadtMainFields {
+impl Debug for Fadt {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("FadtMainFields")
-            .field("facs_addr", &format_args!("{:#x}", self.facs_addr))
-            .field("dsdt_addr", &format_args!("{:#x}", self.dsdt_addr))
-            .field("reserved0", &self.reserved0)
+        let mut s = f.debug_struct("FadtMainFields");
+        s.field("facs_addr", &self.facs_addr())
+            .field("dsdt_addr", &self.dsdt_addr())
             .field(
                 "preferred_power_management_profile",
                 &self.preferred_power_management_profile(),
             )
-            .field("sci_interrupt", &self.sci_interrupt)
-            .field("smi_command_port", &self.smi_command_port)
-            .field("acpi_enable", &self.acpi_enable)
-            .field("acpi_disable", &self.acpi_disable)
-            .field("s4bios_req", &self.s4bios_req)
-            .field("pstate_control", &self.pstate_control)
-            .field("pm1a_event_block", &self.pm1a_event_block)
-            .field("pm1b_event_block", &self.pm1b_event_block)
-            .field("pm1a_control_block", &self.pm1a_control_block)
-            .field("pm1b_control_block", &self.pm1b_control_block)
-            .field("pm2_control_block", &self.pm2_control_block)
-            .field("pm_timer_block", &self.pm_timer_block)
-            .field("gpe0_block", &self.gpe0_block)
-            .field("gpe1_block", &self.gpe1_block)
-            .field("pm1_event_length", &self.pm1_event_length)
-            .field("pm1_control_length", &self.pm1_control_length)
-            .field("pm2_control_length", &self.pm2_control_length)
-            .field("pm_timer_length", &self.pm_timer_length)
-            .field("gpe0_length", &self.gpe0_length)
-            .field("gpe1_length", &self.gpe1_length)
-            .field("gpe1_base", &self.gpe1_base)
-            .field("c_state_control", &self.c_state_control)
-            .field("worst_c2_latency", &self.worst_c2_latency)
-            .field("worst_c3_latency", &self.worst_c3_latency)
-            .field("flush_size", &self.flush_size)
-            .field("flush_stride", &self.flush_stride)
-            .field("duty_offset", &self.duty_offset)
-            .field("duty_width", &self.duty_width)
-            .field("day_alarm", &self.day_alarm)
-            .field("month_alarm", &self.month_alarm)
-            .field("century", &self.century)
-            .field("boot_architecture_flags", &self.boot_architecture_flags)
-            .field("reserved1", &self.reserved1)
-            .field("flags", &self.flags)
-            .finish()
+            .field("sci_interrupt", &self.sci_interrupt())
+            .field("smi_command_port", &self.smi_command_port())
+            .field("acpi_enable", &self.acpi_enable())
+            .field("acpi_disable", &self.acpi_disable())
+            .field("s4bios_req", &self.s4bios_req())
+            .field("pstate_control", &self.pstate_control())
+            .field("pm1a_event_block", &self.pm1a_event_block())
+            .field("pm1b_event_block", &self.pm1b_event_block())
+            .field("pm1a_control_block", &self.pm1a_control_block())
+            .field("pm1b_control_block", &self.pm1b_control_block())
+            .field("pm2_control_block", &self.pm2_control_block())
+            .field("pm_timer_block", &self.pm_timer_block())
+            .field("gpe0_block", &self.gpe0_block())
+            .field("gpe1_block", &self.gpe1_block())
+            .field("pm1_event_length", &self.pm1_event_length())
+            .field("pm1_control_length", &self.pm1_control_length())
+            .field("pm2_control_length", &self.pm2_control_length())
+            .field("pm_timer_length", &self.pm_timer_length())
+            .field("gpe0_length", &self.gpe0_length())
+            .field("gpe1_length", &self.gpe1_length())
+            .field("gpe1_base", &self.gpe1_base())
+            .field("c_state_control", &self.c_state_control())
+            .field("worst_c2_latency", &self.worst_c2_latency())
+            .field("worst_c3_latency", &self.worst_c3_latency())
+            .field("flush_size", &self.flush_size())
+            .field("flush_stride", &self.flush_stride())
+            .field("duty_offset", &self.duty_offset())
+            .field("duty_width", &self.duty_width())
+            .field("day_alarm", &self.day_alarm())
+            .field("month_alarm", &self.month_alarm())
+            .field("century", &self.century())
+            .field("boot_architecture_flags", &self.boot_architecture_flags())
+            .field("flags", &self.flags());
+
+        if let Some(v2_fields) = &self.version_2_fields {
+            s   .field("reset_reg", &v2_fields.reset_reg)
+            .field("reset_value", &v2_fields.reset_value)
+            .field("reserved2", &v2_fields.reserved2)
+            .field("x_facs_addr", &format_args!("{:#x}", v2_fields.x_facs_addr))
+            .field("x_dsdt_addr", &format_args!("{:x}", v2_fields.x_dsdt_addr))
+            .field("x_pm1a_event_block", &v2_fields.x_pm1a_event_block)
+            .field("x_pm1b_event_block", &v2_fields.x_pm1b_event_block)
+            .field("x_pm1a_control_block", &v2_fields.x_pm1a_control_block)
+            .field("x_pm1b_control_block", &v2_fields.x_pm1b_control_block)
+            .field("x_pm2_control_block", &v2_fields.x_pm2_control_block)
+            .field("x_pm_timer_block", &v2_fields.x_pm_timer_block)
+            .field("x_gpe0_block", &v2_fields.x_gpe0_block)
+            .field("x_gpe1_block", &v2_fields.x_gpe1_block);
+        }
+
+        s.finish()
     }
 }
 
@@ -391,19 +398,7 @@ impl FadtVersion2Fields {
 impl Debug for FadtVersion2Fields {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("FadtVersion2Fields")
-            .field("reset_reg", &self.reset_reg)
-            .field("reset_value", &self.reset_value)
-            .field("reserved2", &self.reserved2)
-            .field("x_facs_addr", &format_args!("{:#x}", self.x_facs_addr))
-            .field("x_dsdt_addr", &format_args!("{:x}", self.x_dsdt_addr))
-            .field("x_pm1a_event_block", &self.x_pm1a_event_block)
-            .field("x_pm1b_event_block", &self.x_pm1b_event_block)
-            .field("x_pm1a_control_block", &self.x_pm1a_control_block)
-            .field("x_pm1b_control_block", &self.x_pm1b_control_block)
-            .field("x_pm2_control_block", &self.x_pm2_control_block)
-            .field("x_pm_timer_block", &self.x_pm_timer_block)
-            .field("x_gpe0_block", &self.x_gpe0_block)
-            .field("x_gpe1_block", &self.x_gpe1_block)
+
             .finish()
     }
 }

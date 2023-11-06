@@ -14,6 +14,7 @@ use self::{
 
 mod fadt;
 pub mod local_apic;
+pub mod io_apic;
 mod madt;
 mod rsdp;
 mod rsdt;
@@ -105,7 +106,7 @@ impl SdtHeader {
         unsafe { Self::check(ptr)?; }
 
         // SAFETY: The pointer is valid for reads, and this read does not exceed the length of SDT header structure
-        Ok(unsafe { core::ptr::read(ptr) })
+        Ok(unsafe { core::ptr::read_unaligned(ptr) })
     }
 
     /// Checks the checksum of the entire table

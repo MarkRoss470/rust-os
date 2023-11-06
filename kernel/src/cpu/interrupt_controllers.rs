@@ -4,10 +4,15 @@ use core::{fmt::Debug, sync::atomic::AtomicU64};
 
 use pic8259::ChainedPics;
 use spin::Mutex;
-use x86_64::instructions::interrupts::without_interrupts;
+use x86_64::{
+    instructions::interrupts::without_interrupts,
+    structures::paging::{frame::PhysFrameRange, PhysFrame},
+};
 
 use crate::{
-    acpi::{io_apic::IoApicRegisters, local_apic::LocalApicRegisters},
+    acpi::{
+        local_apic::{self, LocalApicRegisters}, io_apic::IoApicRegisters,
+    },
     cpu::idt::InterruptIndex,
     global_state::KERNEL_STATE,
     println,
@@ -123,6 +128,20 @@ pub unsafe fn init_local_apic() -> Result<(), ()> {
         .ok_or(())?
         .local_apic_address();
 
+    let local_apic_start_frame = PhysFrame::containing_address(local_apic_addr);
+
+    let local_apic_mapping_addr =
+        KERNEL_STATE
+            .physical_memory_accessor
+            .lock()
+            .map_frames(PhysFrameRange {
+                start: local_apic_start_frame,
+                end: local_apic_start_frame + 1,
+            });
+
+    let local_apic_addr = local_apic_mapping_addr + (local_apic_addr.as_u64() & 4096);
+    let local_apic_addr = local_apic_addr.as_mut_ptr();
+
     // Disable interrupts while changing controller
     // to prevent race conditions where EOI is sent to the wrong controller
     without_interrupts(|| {
@@ -167,7 +186,7 @@ pub unsafe fn init_local_apic() -> Result<(), ()> {
 /// unlike [`init_local_apic`] which may be called once per core.
 /// * The core which this function is called on must be set up to receive interrupts from PS/2 devices
 /// on their respective [`InterruptIndex`]es.
-/// 
+///
 /// # Panics
 /// If this core's local APIC is not set up, i.e. if [`init_local_apic`] hasn't been called
 pub unsafe fn init_io_apic() -> Result<(), ()> {
@@ -182,7 +201,7 @@ pub unsafe fn init_io_apic() -> Result<(), ()> {
 
     let id = match *CURRENT_CONTROLLER.lock() {
         InterruptController::None | InterruptController::Pic(_) => panic!("Local APIC not set up"),
-        InterruptController::LocalApic(ref apic) => apic.get_id(),
+        InterruptController::LocalApic(ref mut apic) => apic.get_id(),
     };
 
     // SAFETY: This core's local APIC is set up to receive interrupts.

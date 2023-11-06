@@ -142,8 +142,8 @@ impl Ps2Controller8042 {
         // If the table doesn't have the `has_8042_controller` field,
         // assume that it does have a controller.
         if !fadt
-            .boot_architecture_flags()
-            .map(|flags| flags.has_8042_controller())
+            .as_ref()
+            .map(|fadt| fadt.boot_architecture_flags().has_8042_controller())
             .unwrap_or(true)
         {
             return None;

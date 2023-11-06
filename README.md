@@ -25,7 +25,7 @@ Current features:
 
 ## Features In Development
 
-- Further ACPI support using the ACPICA C library. I am writing my own rust bindings to this library as no existing bindings exist. The source code for these bindings are [here](https://github.com/MarkRoss470/acpica-rust-bindings)
+- Further ACPI support using the ACPICA C library. I am writing my own rust bindings to this library as no existing bindings exist. The source code for these bindings are [here](https://github.com/MarkRoss470/acpica-rust-bindings). This is in development on the `dev-acpi` branch.
 - XHCI support for interacting with USB devices. This is currently blocked by support for ACPI as this is needed to handle PCI interrupts, which is necessary to support XHCI
 
 ## Screenshots

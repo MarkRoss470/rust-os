@@ -225,6 +225,12 @@ impl LocalApicRegisters {
         unsafe { self.write_reg(Self::EOI_OFFSET, 0) }
     }
 
+    /// Gets this APIC's ID
+    pub fn get_id(&mut self) -> u8 {
+        // SAFETY: Reading from the `LAPIC ID` field doesn't have side-effects
+        unsafe { self.read_reg(Self::LAPIC_ID_OFFSET).try_into().unwrap() }
+    }
+
     /// Maps a division value for the local timer to the value to be written to the
     /// `divide_configuration` register.
     const fn create_divide_value(division: u8) -> u32 {
