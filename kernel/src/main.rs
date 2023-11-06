@@ -57,7 +57,11 @@ use graphics::init_graphics;
 use input::{init_keybuffer, pop_key};
 use pci::lspci;
 
-use crate::graphics::{Colour, WRITER};
+use crate::{
+    acpi::power_off,
+    graphics::{clear, flush, Colour, WRITER},
+    scheduler::num_tasks,
+};
 
 /// This function is called on panic.
 #[cfg(not(test))]
@@ -66,6 +70,8 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     x86_64::instructions::interrupts::disable();
 
     println!("{info}");
+
+    flush();
 
     loop {
         x86_64::instructions::hlt();
@@ -101,11 +107,36 @@ fn debug_memory_regions(memory_regions: &MemoryRegions) {
 struct KernelLogger;
 
 impl Log for KernelLogger {
-    fn enabled(&self, _: &log::Metadata) -> bool {
-        true
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        let target = metadata.target();
+        match metadata.level() {
+            log::Level::Error => true,
+            log::Level::Warn => true,
+            log::Level::Trace | log::Level::Debug | log::Level::Info => {
+                if target.starts_with("acpi") {
+                    ![
+                        "acpi_os_create_semaphore",
+                        "acpi_os_delete_semaphore",
+                        "acpi_os_signal_semaphore",
+                        "acpi_os_wait_semaphore",
+                        "acpi_os_allocate",
+                        "acpi_os_free",
+                    ]
+                    .contains(&target)
+                } else if target.starts_with("ps2") {
+                    false
+                } else {
+                    true
+                }
+            }
+        }
     }
 
     fn log(&self, record: &log::Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+
         print!("[");
 
         let level_str = match record.level() {
@@ -132,11 +163,21 @@ impl Log for KernelLogger {
             w.set_colour(Colour::WHITE)
         }
 
-        if let Some(file) = record.module_path() {
-            print!(" {file}");
-            if let Some(line) = record.line() {
-                print!(":{line}")
+        match (record.module_path(), record.file()) {
+            // If the record is an error, print the whole file path not just the module
+            (_, Some(file)) if record.level() == log::Level::Error => {
+                print!(" {file}");
+                if let Some(line) = record.line() {
+                    print!(":{line}");
+                }
             }
+            (Some(module), _) => {
+                print!(" {module}");
+                if let Some(line) = record.line() {
+                    print!(":{line}");
+                }
+            }
+            _ => (),
         }
 
         print!("] ");
@@ -193,10 +234,7 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
 
     init_graphics(boot_info.framebuffer.as_mut().unwrap());
     println!("Initialised graphics");
-
-    log::log!(log::Level::Error, "Test");
-    log::warn!("Test");
-    log::error!("Test");
+    flush();
 
     // SAFETY: This function is only called once
     unsafe {
@@ -205,20 +243,12 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
 
     // SAFETY: This function is only called once.
     // The bootloader gets the rsdp pointer from the BIOS or UEFI so it is valid and accurate.
-    let acpi_cache = unsafe {
-        acpi::init(
-            boot_info.rsdp_addr.into_option().unwrap(),
-            boot_info.physical_memory_offset.into_option().unwrap(),
-        )
-    };
-    KERNEL_STATE.acpi_cache.init(acpi_cache);
-
-    // SAFETY: This function is only called once
-    unsafe { pci::init() }
+    unsafe { acpi::init(boot_info.rsdp_addr.into_option().unwrap()) };
 
     init_keybuffer();
 
     println!("Initialising APIC");
+    flush();
 
     // SAFETY: This function is only called once.
     // TODO: This doesn't need unwrapping if the PIC is working
@@ -227,11 +257,13 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
     // SAFETY: This function is only called once.
     // The core is set up to receive interrupts as `init_interrupts` has been called above.
     unsafe { cpu::interrupt_controllers::init_io_apic().unwrap() };
+    flush();
 
     // SAFETY: This function is only called once.
     unsafe { cpu::init_ps2() };
 
     println!("Finished initialising kernel");
+    flush();
 }
 
 /// The config struct to instruct the bootloader how to load the kernel
@@ -260,12 +292,17 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     //x86_64::instructions::interrupts::disable();
     x86_64::instructions::interrupts::int3();
 
+    // SAFETY: Just for debugging
+    // unsafe { power_off().unwrap() };
+
     shell_loop()
 }
 
 /// Loops while receiving commands from keyboard input
 fn shell_loop() -> ! {
     let mut input = String::new();
+
+    print!(">");
 
     loop {
         x86_64::instructions::hlt();
@@ -274,17 +311,29 @@ fn shell_loop() -> ! {
             match key {
                 pc_keyboard::DecodedKey::Unicode(c) => {
                     print!("{c}");
+
+                    #[allow(unreachable_code)]
+                    // This is needed because of a bug in rustc to do with uninhabited types
                     if c == '\n' {
-                        let commands: Vec<_> = input.split(' ').filter(|a| !a.is_empty()).collect();
+                        let commands: Vec<_> =
+                            input.split_whitespace().filter(|a| !a.is_empty()).collect();
                         if let Some(c) = commands.first() {
                             match *c {
                                 "echo" => echo(&commands[1..]),
-                                "lspci" => lspci(),
+                                "lspci" => lspci(&commands[1..]),
+                                // SAFETY: This is just a debug console, so killing the OS is fine.
+                                // TODO: shut down the kernel first
+                                "poweroff" => unsafe {
+                                    power_off().unwrap();
+                                },
+                                "clear" => clear(),
+                                "kinfo" => kinfo(&commands[1..]),
                                 _ => println!("Unknown command {c}"),
                             }
                         }
 
                         input.clear();
+                        print!(">");
                     } else {
                         input.push(c);
                     }
@@ -301,4 +350,10 @@ fn echo(args: &[&str]) {
         print!("{arg} ");
     }
     println!();
+}
+
+/// Prints info about the kernel's state
+fn kinfo(_: &[&str]) {
+    println!("Kernel ticks: {}", KERNEL_STATE.ticks());
+    println!("Registered tasks: {}", num_tasks());
 }

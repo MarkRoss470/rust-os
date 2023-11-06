@@ -8,19 +8,18 @@ mod idt;
 pub mod interrupt_controllers;
 pub mod ps2;
 
-use core::arch::asm;
+pub use frame_allocator::BootInfoFrameAllocator;
+pub use idt::{register_interrupt_callback, remove_interrupt_callback, CallbackAddError, CallbackRemoveError};
 
 use bootloader_api::info::MemoryRegions;
-pub use frame_allocator::BootInfoFrameAllocator;
+use core::arch::asm;
+use x86_64::structures::paging::PhysFrame;
 
-use x86_64::structures::paging::frame::PhysFrameRange;
-use x86_64::structures::paging::FrameAllocator;
-use x86_64::structures::paging::Mapper;
-use x86_64::structures::paging::OffsetPageTable;
-use x86_64::structures::paging::Page;
-use x86_64::structures::paging::PageTable;
-use x86_64::structures::paging::PageTableFlags;
-use x86_64::VirtAddr;
+use x86_64::structures::paging::{
+    frame::PhysFrameRange, page::PageRange, FrameAllocator, Mapper, OffsetPageTable, Page,
+    PageTable, PageTableFlags,
+};
+use x86_64::{PhysAddr, VirtAddr};
 
 use crate::global_state::KERNEL_STATE;
 use crate::println;
@@ -63,7 +62,10 @@ pub struct PhysicalMemoryAccessor {
 
 impl PhysicalMemoryAccessor {
     /// Maps the given page range into virtual memory and returns the address where they were mapped
-    pub fn map_frames(&mut self, frames: PhysFrameRange) -> VirtAddr {
+    ///
+    /// # Safety
+    /// The memory in `frames` must not be being used by other code
+    pub unsafe fn map_frames(&mut self, frames: PhysFrameRange) -> PageRange {
         let flags: PageTableFlags =
             PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_CACHE;
 
@@ -102,7 +104,81 @@ impl PhysicalMemoryAccessor {
             debug_assert_eq!(physical_page, start_physical_page + i);
         }
 
-        start_virtual_page.start_address()
+        debug_assert!(start_virtual_page.start_address().as_u64() >= PHYSICAL_MEMORY_ACCESS_START);
+        debug_assert!(
+            (start_virtual_page + num_frames).start_address().as_u64()
+                < PHYSICAL_MEMORY_ACCESS_START + PHYSICAL_MEMORY_ACCESS_MAX_SIZE * 4096
+        );
+
+        PageRange {
+            start: start_virtual_page,
+            end: start_virtual_page + num_frames,
+        }
+    }
+
+    /// Unmaps an area of memory which was mapped using [`map_frames`][Self::map_frames].
+    ///
+    /// # Safety
+    /// * `pages` must be a page range which was allocated using [`map_frames`][Self::map_frames].
+    /// * The pages will be unmapped, so any pointers derived from them will cease to be valid.
+    pub unsafe fn unmap_frames(&mut self, pages: PageRange) {
+        let mut page_table = KERNEL_STATE.page_table.lock();
+
+        debug_assert!(pages.start.start_address().as_u64() >= PHYSICAL_MEMORY_ACCESS_START);
+        debug_assert!(
+            pages.end.start_address().as_u64()
+                < PHYSICAL_MEMORY_ACCESS_START + PHYSICAL_MEMORY_ACCESS_MAX_SIZE * 4096
+        );
+
+        for page in pages {
+            // SAFETY: This page is within the physical memory access range and is no longer used
+            page_table.unmap(page).unwrap().1.flush();
+        }
+    }
+
+    /// Maps `len` bytes of physical memory starting at `address` into virtual memory,
+    /// then runs the given function on the pointer, returning the result of the closure.
+    ///
+    /// # Safety
+    /// * Physical memory or an MMIO mapping must exist for all pages spanned in the range `address .. address + len`
+    /// * The physical pointer `address` must be valid for whatever operations are performed in the given function.
+    /// * The pointer passed to the function is only valid for the duration of that call.
+    pub unsafe fn with_mapping<T, F>(&mut self, address: PhysAddr, len: usize, f: F) -> T
+    where
+        F: FnOnce(*mut ()) -> T,
+    {
+        let frame = PhysFrame::containing_address(address);
+
+        // SAFETY: `address` is valid for `len` bytes of
+        let mapping = unsafe {
+            self.map_frames(PhysFrameRange {
+                start: frame,
+                end: frame + len.div_ceil(4096).try_into().unwrap(),
+            })
+        };
+
+        let addr_usize: usize = address.as_u64().try_into().unwrap();
+
+        // `mapping` starts on the page boundary before the given `address`, so increase the pointer to reach the target `address`
+        //
+        // SAFETY: Something exists in the address space for all pages in the given range,
+        // which means constructing this pointer is valid
+        let ptr = unsafe {
+            mapping
+                .start
+                .start_address()
+                .as_mut_ptr::<()>()
+                .byte_add(addr_usize & 4096)
+        };
+
+        let v = f(ptr);
+
+        // SAFETY: These frames were just allocated with `map_frames`s
+        unsafe {
+            self.unmap_frames(mapping);
+        }
+
+        v
     }
 }
 

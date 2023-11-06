@@ -1,6 +1,11 @@
 //! Contains the [`LocalApicRegisters`] struct
 
-use crate::println;
+use x86_64::{
+    structures::paging::{frame::PhysFrameRange, PhysFrame},
+    PhysAddr,
+};
+
+use crate::{global_state::KERNEL_STATE, println};
 
 #[bitfield(u32)]
 struct InterruptCommandRegister {
@@ -178,8 +183,20 @@ impl LocalApicRegisters {
     /// Each core has a different APIC but they are all mapped to the same physical address,
     /// so it is okay to have multiple instances with the same physical address as long as
     /// they always stay on different cores.
-    pub unsafe fn new(ptr: *mut Self) -> Self {
-        Self(ptr as *mut _)
+    pub unsafe fn new(addr: PhysAddr) -> Self {
+        let start = PhysFrame::containing_address(addr);
+        let frames = PhysFrameRange {
+            start,
+            end: start + 2, // Add 2 in case the registers are mapped across a page boundary
+        };
+
+        let virt_addr = KERNEL_STATE
+            .physical_memory_accessor
+            .lock()
+            .map_frames(frames);
+
+        let virt_addr = virt_addr.start.start_address().as_u64() + (addr.as_u64() & 4096);
+        Self(virt_addr as _)
     }
 
     /// Reads the register at the given byte offset
@@ -280,7 +297,7 @@ impl LocalApicRegisters {
         }
 
         // Set the divisor the timer uses
-        
+
         // SAFETY: This has no side effects until the initial_count register is set.
         unsafe {
             self.write_reg(
@@ -348,8 +365,9 @@ impl LocalApicRegisters {
 
     /// Prints out the APIC's registers
     #[rustfmt::skip]
-    pub fn debug_registers(&self) {
-        println!("APIC {{");
+    pub fn debug_re(&self) {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { println!("APIC {{"); }
         // SAFETY: Reading from these registers has no side effects
         unsafe {
             println!("    LAPIC_ID: {}", self.read_reg(Self::LAPIC_ID_OFFSET));
@@ -378,5 +396,128 @@ impl LocalApicRegisters {
             println!("    DIVIDE_CONFIGURATION: {}", self.read_reg(Self::DIVIDE_CONFIGURATION_OFFSET));
         }
         println!("}}");
+    }
+}
+
+impl LocalApicRegisters {
+    /// Reads the LAPIC_ID_OFFSET register
+    pub fn lapic_id(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::LAPIC_ID_OFFSET) }
+    }
+    /// Reads the LAPIC_VERSION_OFFSET register
+    pub fn lapic_version(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::LAPIC_VERSION_OFFSET) }
+    }
+    /// Reads the TASK_PRIORITY_OFFSET register
+    pub fn task_priority(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::TASK_PRIORITY_OFFSET) }
+    }
+    /// Reads the ARBITRATION_PRIORITY_OFFSET register
+    pub fn arbitration_priority(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::ARBITRATION_PRIORITY_OFFSET) }
+    }
+    /// Reads the PROCESSOR_PRIORITY_OFFSET register
+    pub fn processor_priority(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::PROCESSOR_PRIORITY_OFFSET) }
+    }
+    /// Reads the REMOTE_READ_OFFSET register
+    pub fn remote_read(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::REMOTE_READ_OFFSET) }
+    }
+    /// Reads the LOGICAL_DESTINATION_OFFSET register
+    pub fn logical_destination(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::LOGICAL_DESTINATION_OFFSET) }
+    }
+    /// Reads the DESTINATION_FORMAT_OFFSET register
+    pub fn destination_format(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::DESTINATION_FORMAT_OFFSET) }
+    }
+    /// Reads the SPURIOUS_INTERRUPT_VECTOR_OFFSET register
+    pub fn spurious_interrupt_vector(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::SPURIOUS_INTERRUPT_VECTOR_OFFSET) }
+    }
+    /// Reads the IN_SERVICE_OFFSET register
+    pub fn in_service(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::IN_SERVICE_OFFSET) }
+    }
+    /// Reads the TRIGGER_MODE_OFFSET register
+    pub fn trigger_mode(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::TRIGGER_MODE_OFFSET) }
+    }
+    /// Reads the INTERRUPT_REQUEST_OFFSET register
+    pub fn interrupt_request(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::INTERRUPT_REQUEST_OFFSET) }
+    }
+    /// Reads the ERROR_STATUS_OFFSET register
+    pub fn error_status(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::ERROR_STATUS_OFFSET) }
+    }
+    /// Reads the LVT_CORRECTED_MACHINE_CHECK_INTERRUPT_CMCI_OFFSET register
+    pub fn lvt_corrected_machine_check_interrupt_cmci(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::LVT_CORRECTED_MACHINE_CHECK_INTERRUPT_CMCI_OFFSET) }
+    }
+    /// Reads the INTERRUPT_COMMAND_OFFSET register
+    pub fn interrupt_command(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::INTERRUPT_COMMAND_OFFSET) }
+    }
+    /// Reads the LVT_TIMER_OFFSET register
+    pub fn lvt_timer(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::LVT_TIMER_OFFSET) }
+    }
+    /// Reads the LVT_THERMAL_SENSOR_OFFSET register
+    pub fn lvt_thermal_sensor(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::LVT_THERMAL_SENSOR_OFFSET) }
+    }
+    /// Reads the LVT_PERFORMANCE_MONITORING_COUNTERS_OFFSET register
+    pub fn lvt_performance_monitoring_counters(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::LVT_PERFORMANCE_MONITORING_COUNTERS_OFFSET) }
+    }
+    /// Reads the LVT_LINT0_OFFSET register
+    pub fn lvt_lint0(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::LVT_LINT0_OFFSET) }
+    }
+    /// Reads the LVT_LINT1_OFFSET register
+    pub fn lvt_lint1(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::LVT_LINT1_OFFSET) }
+    }
+    /// Reads the LVT_ERROR_OFFSET register
+    pub fn lvt_error(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::LVT_ERROR_OFFSET) }
+    }
+    /// Reads the INITIAL_COUNT_OFFSET register
+    pub fn initial_count(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::INITIAL_COUNT_OFFSET) }
+    }
+    /// Reads the CURRENT_COUNT_OFFSET register
+    pub fn current_count(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::CURRENT_COUNT_OFFSET) }
+    }
+    /// Reads the DIVIDE_CONFIGURATION_OFFSET register
+    pub fn divide_configuration(&self) -> u32 {
+        // SAFETY: This register doesn't have read side effects
+        unsafe { self.read_reg(Self::DIVIDE_CONFIGURATION_OFFSET) }
     }
 }

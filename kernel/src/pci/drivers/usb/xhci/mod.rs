@@ -12,6 +12,7 @@ use crate::{
     pci::{
         classcodes::ClassCode, devices::PciFunction,
         drivers::usb::xhci::operational_registers::OperationalRegisters, registers::HeaderType,
+        PciMappedFunction,
     },
     println,
 };
@@ -47,10 +48,10 @@ impl XhciController {
     /// This function may only be called once per xHCI controller
     ///
     /// [4.2]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A87%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C374%2C0%5D
-    pub async unsafe fn init(function: PciFunction) {
-        println!("{function}: Reading header");
+    pub async unsafe fn init(function: PciMappedFunction) {
+        println!("{}: Reading header", function.function);
 
-        let header = function.get_header().unwrap().unwrap();
+        let header = function.read_header().unwrap().unwrap();
         let HeaderType::GeneralDevice(general_device_header) = header.header_type else {
             panic!()
         };
@@ -62,21 +63,27 @@ impl XhciController {
             ))
         );
 
-        println!("{function}: Getting BAR");
+        println!("{}: Getting BAR", function.function);
 
         // SAFETY: XHCI controllers are guaranteed to have a BAR in BAR slot 0
-        let bar = unsafe { general_device_header.bar(0) };
+        let bar = unsafe { general_device_header.bar(&function, 0) };
 
         bar.debug();
 
-        println!("{function}: Allocating BAR");
+        println!("{}: Allocating BAR", function.function);
 
         // SAFETY: as this function is only allowed to be called once, no other code can have seen this BAR yet
         let mmio = bar.get_frames();
-        let mapped_mmio = KERNEL_STATE
-            .physical_memory_accessor
-            .lock()
-            .map_frames(mmio);
+
+        // SAFETY: The physical address is not used by other code as this function is only called once per controller
+        let mapped_mmio = unsafe {
+            KERNEL_STATE
+                .physical_memory_accessor
+                .lock()
+                .map_frames(mmio)
+                .start
+                .start_address()
+        };
 
         // SAFETY: The XHCI capability registers struct is guaranteed to be at this location in memory.
         let capability_registers = unsafe { CapabilityRegisters::new(mapped_mmio) };
@@ -96,13 +103,13 @@ impl XhciController {
         };
 
         let mut controller = Self {
-            function,
+            function: function.function,
             capability_registers,
             operational_registers,
             runtime_registers,
         };
 
-        println!("{function}: Sending Host Controller Reset");
+        println!("{}: Sending Host Controller Reset", function.function);
         // SAFETY: The controller hasn't been set up yet so nothing is relying on the state being preserved
         unsafe {
             controller.reset_and_wait().await;
@@ -111,7 +118,8 @@ impl XhciController {
         controller.enable_all_ports();
 
         println!(
-            "{function}: Number of attached devices: {}",
+            "{}: Number of attached devices: {}",
+            function.function,
             controller
                 .operational_registers
                 .ports()

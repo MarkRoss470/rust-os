@@ -3,11 +3,11 @@
 use super::{
     bar::Bar,
     classcodes::{ClassCode, InvalidValueError},
-    devices::{PciFunction, PciRegister},
+    devices::{PciFunction, PciRegister}, split_to_u16, split_to_u8, PcieController, PciMappedFunction,
 };
 
 /// The vendor:device code of a particular PCI device
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PciDeviceId {
     /// The PCI vendor code of the device's manufacturer
     pub vendor: u16,
@@ -23,7 +23,7 @@ impl PciDeviceId {
     }
 }
 
-impl core::fmt::Debug for PciDeviceId {
+impl core::fmt::Display for PciDeviceId {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "0x{:04x} 0x{:04x}  ", self.vendor, self.device)?;
 
@@ -238,13 +238,13 @@ impl PciGeneralDeviceHeader {
     /// `bar_number` must be the offset of a BAR which really exists,
     /// and must not point to the second half of a 64-bit BAR.
     /// This can be verified by checking [`class_code`][PciHeader::class_code].
-    pub unsafe fn bar(&self, bar_number: u8) -> Bar {
+    pub unsafe fn bar<'a>(&self, function: &'a PciMappedFunction, bar_number: u8) -> Bar<'a> {
         if bar_number > 5 {
             panic!("bar_number too high");
         }
 
         // SAFETY: the caller guarantees that this register really is a BAR
-        unsafe { Bar::new(self.function.register(0x10 + bar_number * 4).unwrap()) }
+        unsafe { Bar::new(function, 4 + bar_number) }
     }
 }
 
@@ -362,13 +362,13 @@ impl PciToPciBridgeHeader {
     /// `bar_number` must be the offset of a BAR which really exists,
     /// and must not point to the second half of a 64-bit BAR.
     /// This can be verified by checking [`class_code`][PciHeader::class_code].
-    pub unsafe fn bar(&self, bar_number: u8) -> Bar {
+    pub unsafe fn bar<'a>(&self, function: &'a mut PciMappedFunction, bar_number: u8) -> Bar<'a> {
         if bar_number > 1 {
             panic!("bar_number too high");
         }
 
         // SAFETY: the caller guarantees that this register really is a BAR
-        unsafe { Bar::new(self.function.register(0x10 + bar_number * 4).unwrap()) }
+        unsafe { Bar::new(function, 4 + bar_number) }
     }
 }
 
@@ -413,22 +413,7 @@ pub struct PciHeader {
     pub header_type: HeaderType,
 }
 
-/// Splits a [`u32`] into two [`u16`]s.
-/// The less significant [`u16`] is returned first.
-fn split_to_u16(value: u32) -> (u16, u16) {
-    (value as u16, (value >> 16) as u16)
-}
 
-/// Splits a [`u32`] into four [`u8`]s.
-/// The least significant [`u8`]s are returned first.
-fn split_to_u8(value: u32) -> (u8, u8, u8, u8) {
-    (
-        value as u8,
-        (value >> 8) as u8,
-        (value >> 16) as u8,
-        (value >> 24) as u8,
-    )
-}
 
 impl PciHeader {
     /// Constructs a [`PciHeader`] from the PCI registers which make it up.

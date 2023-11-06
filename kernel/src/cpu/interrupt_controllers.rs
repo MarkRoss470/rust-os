@@ -2,6 +2,7 @@
 
 use core::{fmt::Debug, sync::atomic::AtomicU64};
 
+use log::debug;
 use pic8259::ChainedPics;
 use spin::Mutex;
 use x86_64::instructions::interrupts::without_interrupts;
@@ -95,16 +96,18 @@ pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 /// # Safety
 /// No other code may be handling the PIC.
 pub unsafe fn init_pic() {
-    let mut current_controller = CURRENT_CONTROLLER.lock();
-    // SAFETY: The PIC is about to be initialised which will provide interrupt handling
-    unsafe { current_controller.disable() };
+    without_interrupts(|| {
+        let mut current_controller = CURRENT_CONTROLLER.lock();
+        // SAFETY: The PIC is about to be initialised which will provide interrupt handling
+        unsafe { current_controller.disable() };
 
-    // SAFETY: The given IRQ vectors are free
-    let mut pics = unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) };
-    // SAFETY: Same as above
-    unsafe { pics.initialize() };
+        // SAFETY: The given IRQ vectors are free
+        let mut pics = unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) };
+        // SAFETY: Same as above
+        unsafe { pics.initialize() };
 
-    *current_controller = InterruptController::Pic(pics);
+        *current_controller = InterruptController::Pic(pics);
+    })
 }
 
 /// Initialises the APIC, if it's present. This function should be called after the ACPI cache is initialised.
@@ -115,13 +118,7 @@ pub unsafe fn init_pic() {
 pub unsafe fn init_local_apic() -> Result<(), ()> {
     println!("Getting apic addr");
 
-    let local_apic_addr = KERNEL_STATE
-        .acpi_cache
-        .lock()
-        .madt
-        .as_ref()
-        .ok_or(())?
-        .local_apic_address();
+    let local_apic_addr = KERNEL_STATE.acpica.lock().madt().local_apic_address();
 
     // Disable interrupts while changing controller
     // to prevent race conditions where EOI is sent to the wrong controller
@@ -129,7 +126,7 @@ pub unsafe fn init_local_apic() -> Result<(), ()> {
         let mut local_apic =
         // SAFETY: This function is only called once per core.
         // The pointer was taken from the MADT so the APIC is definitely there.
-            unsafe { LocalApicRegisters::new(local_apic_addr) };
+            unsafe { LocalApicRegisters::new(local_apic_addr.into()) };
 
         // local_apic.debug_registers();
 
@@ -167,23 +164,25 @@ pub unsafe fn init_local_apic() -> Result<(), ()> {
 /// unlike [`init_local_apic`] which may be called once per core.
 /// * The core which this function is called on must be set up to receive interrupts from PS/2 devices
 /// on their respective [`InterruptIndex`]es.
-/// 
+///
 /// # Panics
 /// If this core's local APIC is not set up, i.e. if [`init_local_apic`] hasn't been called
 pub unsafe fn init_io_apic() -> Result<(), ()> {
-    let acpi_cache = KERNEL_STATE.acpi_cache.lock();
-    let madt = acpi_cache.madt.as_ref().ok_or(())?;
+    let acpica = KERNEL_STATE.acpica.lock();
+    let madt = acpica.madt();
 
-    let io_apic_addr = madt.io_apic_address();
+    debug!("{madt:?}");
+
+    let io_apic_addr = madt.io_apic_address().unwrap().into();
 
     // SAFETY: The pointer was fetched from ACPI tables so it must be valid.
     // This function is only called once so `IoApicRegisters::new` will only be called once.
     let mut io_apic = unsafe { IoApicRegisters::new(io_apic_addr) };
 
-    let id = match *CURRENT_CONTROLLER.lock() {
+    let id = without_interrupts(|| match *CURRENT_CONTROLLER.lock() {
         InterruptController::None | InterruptController::Pic(_) => panic!("Local APIC not set up"),
-        InterruptController::LocalApic(ref apic) => apic.get_id(),
-    };
+        InterruptController::LocalApic(ref apic) => apic.lapic_id().try_into().unwrap(),
+    });
 
     // SAFETY: This core's local APIC is set up to receive interrupts.
     unsafe {
@@ -204,7 +203,7 @@ pub unsafe fn init_io_apic() -> Result<(), ()> {
 /// This function is for debugging purposes only and is not guaranteed to be sound.
 #[allow(dead_code)]
 pub unsafe fn send_debug_self_interrupt(vector: u8) {
-    let callback = match *CURRENT_CONTROLLER.lock() {
+    let callback = without_interrupts(|| match *CURRENT_CONTROLLER.lock() {
         InterruptController::None | InterruptController::Pic(_) => {
             panic!("Can't send a self interrupt unless the current controller is an APIC")
         }
@@ -212,7 +211,7 @@ pub unsafe fn send_debug_self_interrupt(vector: u8) {
         InterruptController::LocalApic(ref mut apic) => unsafe {
             apic.send_debug_self_interrupt_delayed(vector)
         },
-    };
+    });
 
     callback()
 }

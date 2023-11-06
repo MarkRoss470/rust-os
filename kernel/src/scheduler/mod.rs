@@ -8,6 +8,9 @@ use core::{
 
 use alloc::{boxed::Box, vec::Vec};
 use spin::Mutex;
+use x86_64::instructions::interrupts::without_interrupts;
+
+use crate::println;
 
 /// An async task which is polled on each timer interrupt
 pub struct Task(Pin<Box<dyn Future<Output = ()>>>);
@@ -22,7 +25,11 @@ impl Task {
     where
         T: Future<Output = ()> + 'static,
     {
-        TASKS.lock().push(Self(Box::pin(t)));
+        // The `TASKS` vector is used in the timer interrupt handler, 
+        // so disable interrupts while modifying it to avoid deadlock
+        without_interrupts(|| {
+            TASKS.lock().push(Self(Box::pin(t)));
+        });
     }
 }
 
@@ -69,4 +76,9 @@ pub fn poll_tasks() {
             Poll::Ready(()) => false,
         }
     });
+}
+
+/// Gets the number of tasks in [`TASKS`]
+pub fn num_tasks() -> usize {
+    TASKS.lock().len()
 }
