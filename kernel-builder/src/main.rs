@@ -1,7 +1,8 @@
 use std::{
     ffi::{OsStr, OsString},
+    fs,
     path::PathBuf,
-    process::Command, fs,
+    process::Command,
 };
 
 use clap::Parser;
@@ -29,11 +30,10 @@ struct Args {
 
     /// Adds a device when running qemu.
     /// Has no effect if not combined with --run.  
-    /// 
+    ///
     /// Example usage: `kernel-builder --run --qemu-device "pci-bridge,id=bridge0,chassis_nr=1"`
     #[arg(long)]
-    qemu_device: Vec<String>
-
+    qemu_device: Vec<String>,
 }
 
 /// This builder may be invoked with `pwd` = `project-root/kernel-builder` or just `project-root`.
@@ -69,11 +69,17 @@ fn prepare_cargo_command(args: &Args, dir: &str, subcommand: &str) -> Command {
 fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
     let mut c = std::process::Command::new("qemu-system-x86_64");
 
+    c.arg("-bios").arg("/usr/share/ovmf/x64/OVMF.fd");
+
+    c.arg("-machine").arg("q35");
+
     c.arg("-drive")
         .arg(format!("if=none,format=raw,id=os-drive,file={}", file)); // Load the specified image as a drive
     c.arg("-device").arg("qemu-xhci"); // Add an XHCI USB controller
     c.arg("-device").arg("usb-storage,drive=os-drive"); // Add the kernel image as a USB storage device
-    c.arg("-device").arg("usb-mouse");
+                                                        // c.arg("-device").arg("usb-mouse");
+                                                        // c.arg("-device").arg("ps2-mouse");
+    c.arg("-device").arg("pxb-pcie");
 
     if test {
         c.arg("-device")
@@ -88,11 +94,9 @@ fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
             .arg("-daemonize") // Run in background
             .arg("-serial")
             .arg(format!("file:{file}")); // Redirect serial to given file
-            
+
         if let Some(ref qemu_file) = args.qemu_debug {
-            c.arg("-D")
-            .arg(format!("{qemu_file}"))
-            .arg("-d").arg("int");
+            c.arg("-D").arg(format!("{qemu_file}")).arg("-d").arg("int");
         }
     } else {
         c.arg("-serial").arg("stdio"); // Redirect serial to stdout
@@ -129,7 +133,13 @@ fn main() {
     // Check that cargo exited successfully
     assert_eq!(exit_code, 0);
 
-    let kernel = PathBuf::from(kernel_dir).join("target/x86_64-os/debug/os");
+    let kernel_path = if args.release {
+        "target/x86_64-os/release/os"
+    } else {
+        "target/x86_64-os/debug/os"
+    };
+
+    let kernel = PathBuf::from(kernel_dir).join(kernel_path);
 
     let out_dir = PathBuf::from(kernel_dir).join("images");
     // Create the directory to put kernel images, if it doesn't exist.
@@ -152,7 +162,7 @@ fn main() {
     }
 
     if args.run {
-        prepare_qemu_command(args, bios_path.to_str().unwrap(), false)
+        prepare_qemu_command(args, uefi_path.to_str().unwrap(), false)
             .spawn()
             .unwrap()
             .wait()
