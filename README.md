@@ -2,6 +2,10 @@
 
 An experimental operating system written in Rust, using the bootloader crate for interacting with BIOS / UEFI.
 
+# `dev-acpi` specifics
+
+This branch uses the library I am developing at [https://github.com/MarkRoss470/acpica-rust-bindings](https://github.com/MarkRoss470/acpica-rust-bindings). This branch expects this library to exist in an `acpica-bindings` directory alongside this repository. 
+
 ## Getting Started
 
 The project is split into two crates. The kernel code is in `kernel/`, and the code to build, package, and optionally run the kernel is in `kernel-builder/`. To build the kernel, `cd` into `kernel-builder/` and run `cargo run`. This will build the kernel, and the kernel images will be generated at `kernel/images/`. These images can be copied to a USB drive with `dd` to run on real hardware, or run with qemu.
