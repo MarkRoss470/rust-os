@@ -4,10 +4,13 @@ version = 3
 
 [[package]]
 name = "acpica-bindings"
-version = "0.1.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ea1c032420fd50b6fe6ea5350478b15caae590e2c83db3296b904eda9509ad3"
 dependencies = [
  "bitfield-struct",
  "bitvec",
+ "cc",
  "flate2",
  "log",
  "spin 0.9.8",
@@ -67,6 +70,15 @@ name = "bootloader_api"
 version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88f843888771a490c3ad246e58bf25e62da70d2c653d74a3eca92acbab599e02"
+
+[[package]]
+name = "cc"
+version = "1.0.83"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1174fb0b6ec23863f8b971027804a42614e347eafb0a95bf0b12cdae21fc4d0"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "cfg-if"

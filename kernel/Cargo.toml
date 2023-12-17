@@ -32,7 +32,7 @@ volatile = "0.5"
 # For logging
 log = "*"
 
-acpica-bindings = {path = "../../acpica-bindings", features = ["x86_64"]}
+acpica-bindings = {version = "0.1", features = ["x86_64"]}
 
 # For handling async code
 [dependencies.futures]
