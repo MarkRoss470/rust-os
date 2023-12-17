@@ -7,25 +7,6 @@ use x86_64::instructions::port::{Port, PortWriteOnly};
 
 use super::{classcodes::InvalidValueError, registers::PciHeader};
 
-/// The port number to write the address of a [`PciRegister`] to read or write its data
-const CONFIG_ADDRESS: u16 = 0xCF8;
-/// The port number to read or write data to get/set a [`PciRegister`]
-const CONFIG_DATA: u16 = 0xCFC;
-
-/// A struct to combine the two PCI ports
-struct PciPorts {
-    /// The port to write the configuration space address to
-    address: PortWriteOnly<u32>,
-    /// The port to read/write data to
-    data: Port<u32>,
-}
-
-/// A global lock around the PCI configuration space ports
-static PORTS: Mutex<PciPorts> = Mutex::new(PciPorts {
-    address: PortWriteOnly::new(CONFIG_ADDRESS),
-    data: Port::new(CONFIG_DATA),
-});
-
 /// An error which can occur when constructing a PCI address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PciInvalidAddressError {
@@ -143,62 +124,6 @@ impl PciRegister {
         | (self.offset as u32)
     }
 
-    /// Reads from the [`PciRegister`]
-    /// # Safety
-    /// This function is unsafe as the read may have side-effects depending on the PCI device in question
-    pub unsafe fn read_u32(&self) -> u32 {
-        let mut ports = PORTS.lock();
-
-        // SAFETY:
-        // The safety of this operation is the caller's responsibility
-        unsafe {
-            ports.address.write(self.get_address());
-            ports.data.read()
-        }
-    }
-
-    /// Writes the value to the [`PciRegister`]
-    ///
-    /// # Safety
-    /// This function is unsafe as the write may have side-effects depending on the PCI device in question
-    pub unsafe fn write_u32(&self, value: u32) {
-        let mut ports = PORTS.lock();
-
-        // SAFETY:
-        // The safety of this operation is the caller's responsibility
-        unsafe {
-            ports.address.write(self.get_address());
-            ports.data.write(value);
-        }
-    }
-
-    /// Reads the register's value, writes the given value to the register, reads the register again,
-    /// and then restores the original value.
-    /// This is useful to see how the device responds to a write without changing the underlying data,
-    /// such as when finding the size of a [`Bar`][super::registers::Bar].
-    ///
-    /// # Safety
-    /// This function is unsafe as the accesses may have side-effects depending on the PCI device in question
-    pub unsafe fn write_and_reset(&self, value: u32) -> u32 {
-        let mut ports = PORTS.lock();
-
-        // SAFETY:
-        // The safety of this operation is the caller's responsibility
-        unsafe {
-            ports.address.write(self.get_address());
-            // Save the original value
-            let original_value = ports.data.read();
-            // Write the new value
-            ports.data.write(value);
-            // Read the value again
-            let value_after_write = ports.data.read();
-            // Restore the original value
-            ports.data.write(original_value);
-
-            value_after_write
-        }
-    }
-
     /// Gets the next register - i.e. the same as this but with [`offset`][PciRegister::offset] 4 bytes greater
     ///
     /// Returns [`None`] if this register is the PCI device's last register
@@ -266,29 +191,39 @@ impl PciFunction {
         PciRegister::from_parts(self.bus, self.device, self.function, offset)
     }
 
-    /// Reads the PCI device's header
-    pub fn get_header(&self) -> Result<Option<PciHeader>, InvalidValueError> {
-        let mut registers = [0; 0x11];
+    // /// Reads the PCI device's header
+    // pub fn get_header(&self) -> Result<Option<PciHeader>, InvalidValueError> {
+    //     let mut registers = [0; 0x11];
 
-        for (i, register) in registers.iter_mut().enumerate() {
-            // SAFETY:
-            // Reading from the header should not have side effects
-            unsafe {
-                *register = self.register(i as u8 * 4).unwrap().read_u32();
-            }
-        }
+    //     for (i, register) in registers.iter_mut().enumerate() {
+    //         // SAFETY:
+    //         // Reading from the header should not have side effects
+    //         unsafe {
+    //             *register = self.register(i as u8 * 4).unwrap().read_u32();
+    //         }
+    //     }
 
-        PciHeader::from_registers(registers, self)
-    }
+    //     PciHeader::from_registers(registers, self)
+    // }
 
     /// Gets the [`PciDevice`] which this function is a part of
     pub fn get_device(&self) -> PciDevice {
         PciDevice { bus: self.bus, device: self.device }
     }
 
+    /// Gets the device number of the device this function is a part of
+    pub fn get_device_number(&self) -> u8 {
+        self.device
+    }
+
     /// Gets the bus number of the device this function is a part of
-    pub fn get_bus(&self) -> u8 {
+    pub fn get_bus_number(&self) -> u8 {
         self.bus
+    }
+
+    /// Gets the function number
+    pub fn get_function_number(&self) -> u8 {
+        self.function
     }
 }
 
@@ -303,7 +238,7 @@ pub struct PciDevice {
 
 impl PciDevice {
     /// Constructs a new [`PciDevice`] from the given `bus` and `device` numbers
-    pub fn new(bus: u8, device: u8) -> Result<Self, PciInvalidAddressError> {
+    pub fn new(segment: u16, bus: u8, device: u8) -> Result<Self, PciInvalidAddressError> {
         // Check that `device`, has a valid value
         check_device_id(device)?;
 
@@ -316,7 +251,11 @@ impl PciDevice {
     }
 
     /// Gets the bus number this device is on
-    pub fn get_bus(&self) -> u8 {
+    pub fn get_bus_number(&self) -> u8 {
         self.bus
+    }
+
+    pub fn get_device_number(&self) -> u8 {
+        self.device
     }
 }

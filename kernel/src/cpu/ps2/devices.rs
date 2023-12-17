@@ -4,7 +4,7 @@ use core::fmt::Debug;
 
 use pc_keyboard::{layouts, HandleControl, Keyboard, ScancodeSet2};
 
-use crate::{input::push_key, println};
+use crate::input::push_key;
 
 use super::{Ps2ControllerInitialisationError, Ps2Port, Ps2Ports};
 
@@ -74,8 +74,6 @@ impl Ps2Device {
                     let Some(packet) = ports.read() else {
                         return;
                     };
-
-                    println!("{packet:#x}");
                 }
                 _ => todo!(),
             }

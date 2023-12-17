@@ -1,3 +1,4 @@
+use log::debug;
 use x86_64::{
     structures::paging::{frame::PhysFrameRange, PhysFrame},
     PhysAddr,
@@ -267,6 +268,8 @@ impl IoApicRegisters {
     /// `ptr` must point to a valid system I/O APIC.
     /// This function may only be called once per APIC.
     pub unsafe fn new(ptr: PhysAddr) -> Self {
+        debug!("Creating IoApicRegisters at {ptr:?}");
+
         let start_frame = PhysFrame::containing_address(ptr);
 
         let virt_addr = KERNEL_STATE
@@ -277,7 +280,7 @@ impl IoApicRegisters {
                 end: start_frame + 2,
             });
 
-        Self(virt_addr.as_mut_ptr())
+        Self(virt_addr.start.start_address().as_mut_ptr())
     }
 
     /// Reads from a register. This method requires an `&mut self` parameter because
@@ -335,8 +338,9 @@ impl IoApicRegisters {
         vector: u8,
         entry: RedirectionEntry,
     ) -> Result<(), ()> {
+        debug!(target: "write_redirection_entry", "vector: {vector}, maximum redirection entry: {}", self.get_version().maximum_redirection_entry());
         assert!(vector <= self.get_version().maximum_redirection_entry());
-
+        
         let vector = vector as u32;
         let entry: u64 = entry.into();
 

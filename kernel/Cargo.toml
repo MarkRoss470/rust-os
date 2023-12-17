@@ -29,11 +29,10 @@ bitfield-struct = "*"
 # For dealing with memory mapped IO
 volatile = "0.5"
 
-# For parsing and executing AML code in ACPI tables
-aml = "0.16"
-
 # For logging
 log = "*"
+
+acpica-bindings = {version = "0.1", features = ["x86_64"]}
 
 # For handling async code
 [dependencies.futures]

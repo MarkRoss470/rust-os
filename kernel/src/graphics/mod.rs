@@ -1,13 +1,16 @@
 //! Functionality for drawing to a framebuffer
 
 mod font_const;
+mod framebuffer;
 
 use crate::global_state::{GlobalState, TryLockedIfInitError};
+use alloc::vec;
+use alloc::vec::Vec;
 use bootloader_api::info::{FrameBuffer, FrameBufferInfo, PixelFormat};
 use core::fmt;
 use spin::Mutex;
 
-use self::font_const::FONT_BITMAPS;
+use self::{font_const::FONT_BITMAPS, framebuffer::FrameBufferController};
 
 /// A 24-bit colour
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,88 +53,6 @@ impl Colour {
 /// The size in pixels of each character
 const CHAR_OFFSET: usize = 10;
 
-/// A wrapper around a framebuffer with software rendering utility functions
-struct FrameBufferController {
-    /// Info about the framebuffer
-    info: FrameBufferInfo,
-    /// The buffer itself
-    buffer: &'static mut [u8],
-}
-
-impl FrameBufferController {
-    /// Sets the pixel at position (`x`, `y`) from the top left of the framebuffer to the given colour.
-    /// Returns `Ok(())` if the write succeeded, or `Err(())` if it failed
-    /// (if the coordinate given is outside the buffer)
-    #[inline]
-    fn write_pixel(&mut self, x: usize, y: usize, colour: Colour) -> Result<(), ()> {
-        if x > self.info.width || y > self.info.height {
-            return Err(());
-        }
-
-        assert_eq!(
-            self.info.pixel_format,
-            PixelFormat::Bgr,
-            "TODO: non-bgr formats"
-        );
-
-        let pixel_start = (y * self.info.stride + x) * self.info.bytes_per_pixel;
-        self.buffer[pixel_start] = colour.blue;
-        self.buffer[pixel_start + 1] = colour.green;
-        self.buffer[pixel_start + 2] = colour.red;
-
-        Ok(())
-    }
-
-    /// Clears the whole buffer with the given colour
-    fn clear(&mut self, colour: Colour) {
-        for y in 0..self.info.height {
-            for x in 0..self.info.width {
-                self.write_pixel(x, y, colour).unwrap();
-            }
-        }
-    }
-
-    /// Draws a rectangle with the top left corner at (`x`, `y`),
-    /// with the given `width` and `height`, filled with the given colour
-    #[allow(dead_code)]
-    fn draw_rect(
-        &mut self,
-        x: usize,
-        y: usize,
-        width: usize,
-        height: usize,
-        colour: Colour,
-    ) -> Result<(), ()> {
-        for y in y..y + width {
-            for x in x..x + height {
-                self.write_pixel(x, y, colour)?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Scrolls the buffer vertically by `scroll_by` pixels,
-    /// filling in the bottom rows with `fill`
-    fn scroll(&mut self, scroll_by: usize, fill: Colour) {
-        let byte_offset = scroll_by * self.info.stride * self.info.bytes_per_pixel;
-        let copy_from = &self.buffer[byte_offset] as *const u8;
-        let copy_to = &mut self.buffer[0] as *mut u8;
-        // Bound is calculated this way to make sure
-        let count = self.info.byte_len - byte_offset;
-
-        // SAFETY:
-        // This copy is all within `self.buffer`, so the memory is owned.
-        unsafe { core::ptr::copy(copy_from, copy_to, count) }
-
-        for y in self.info.height - scroll_by..self.info.height {
-            for x in 0..self.info.width {
-                self.write_pixel(x, y, fill).unwrap();
-            }
-        }
-    }
-}
-
 /// A text writer into a framebuffer
 pub struct Writer {
     /// The current row the [`Writer`] is writing at
@@ -150,6 +71,8 @@ pub struct Writer {
     buffer: FrameBufferController,
 }
 
+const SCROLL_LINES: usize = 10;
+
 impl Writer {
     /// Writes a character to the screen
     fn write_char(&mut self, c: char) {
@@ -162,20 +85,9 @@ impl Writer {
 
             let bitmap = FONT_BITMAPS[c as usize];
 
-            for (y, row) in bitmap.iter().enumerate() {
-                for x in 0..8 {
-                    // Extract one bit from the bitmap
-                    let colour = if row & (1 << x) != 0 {
-                        self.colour
-                    } else {
-                        Colour::BLACK
-                    };
-
-                    self.buffer
-                        .write_pixel(x + start_x, y + start_y, colour)
-                        .unwrap();
-                }
-            }
+            self.buffer
+                .draw_packed_bitmap(bitmap, start_x, start_y, self.colour, Colour::BLACK)
+                .unwrap();
         }
 
         self.column += 1;
@@ -186,8 +98,9 @@ impl Writer {
         }
 
         if self.row >= self.height {
-            self.buffer.scroll(CHAR_OFFSET, Colour::BLACK);
-            self.row = self.height - 1;
+            self.buffer
+                .scroll(CHAR_OFFSET * SCROLL_LINES, Colour::BLACK);
+            self.row = self.height - SCROLL_LINES;
         }
     }
 
@@ -230,10 +143,10 @@ static WRITE_ERROR: Mutex<Option<WriteError>> = Mutex::new(None);
 /// Initialises the framebuffer.
 pub fn init_graphics(framebuffer: &'static mut FrameBuffer) {
     let info = framebuffer.info();
-    let mut buffer = FrameBufferController {
-        info,
-        buffer: framebuffer.buffer_mut(),
-    };
+
+    assert_eq!(info.pixel_format, PixelFormat::Bgr, "TODO: non-bgr formats");
+
+    let mut buffer = FrameBufferController::new(info, framebuffer);
 
     buffer.clear(Colour::BLACK);
 
@@ -245,6 +158,23 @@ pub fn init_graphics(framebuffer: &'static mut FrameBuffer) {
         colour: Colour::WHITE,
         buffer,
     });
+}
+
+pub fn flush() -> Result<(), ()> {
+    let mut writer = WRITER.try_lock().ok_or(())?;
+
+    writer.buffer.flush();
+
+    Ok(())
+}
+
+/// Clears the display, resetting the cursor to the top
+pub fn clear() {
+    let mut writer = WRITER.lock();
+
+    writer.buffer.clear(Colour::BLACK);
+    writer.column = 1;
+    writer.row = 1;
 }
 
 #[doc(hidden)]
@@ -266,7 +196,7 @@ pub fn _print(args: fmt::Arguments) {
             }
             Err(TryLockedIfInitError::NotInitialised) => {
                 serial_print!("{args}");
-            },
+            }
         }
     });
 }

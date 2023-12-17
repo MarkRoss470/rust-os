@@ -1,11 +1,11 @@
 //! Types for managing the kernel's global state
 
-use core::sync::atomic::AtomicUsize;
+use core::sync::atomic::{AtomicUsize, AtomicBool};
 
+use acpica_bindings::AcpicaOperationFullyInitialized;
 use spin::{Mutex, MutexGuard};
 use x86_64::structures::paging::OffsetPageTable;
 
-use crate::acpi::AcpiCache;
 use crate::allocator::{LinkedListAllocator, ALLOCATOR};
 use crate::cpu::{BootInfoFrameAllocator, PhysicalMemoryAccessor};
 use crate::println;
@@ -111,11 +111,13 @@ pub struct KernelState {
     pub heap_allocator: &'static GlobalState<KernelHeapAllocator>,
     /// Helper struct to access physical memory locations
     pub physical_memory_accessor: GlobalState<PhysicalMemoryAccessor>,
-    /// Cache of ACPI tables
-    pub acpi_cache: GlobalState<AcpiCache>,
+    /// The interface to ACPICA
+    pub acpica: GlobalState<AcpicaOperationFullyInitialized>,
 
     /// How many timer interrupts there have been while the kernel was running
     ticks: AtomicUsize,
+    /// Whether to print out ACPICA debug messages
+    pub print_acpica_debug: AtomicBool,
 }
 
 impl KernelState {
@@ -137,8 +139,10 @@ pub static KERNEL_STATE: KernelState = KernelState {
     frame_allocator: GlobalState::new(),
     heap_allocator: ALLOCATOR.get(),
     physical_memory_accessor: GlobalState::new(),
-    acpi_cache: GlobalState::new(),
+    acpica: GlobalState::new(),
+
     ticks: AtomicUsize::new(0),
+    print_acpica_debug: AtomicBool::new(false),
 };
 
 /// A type alias for the kernel's page table. This makes it easier to change the exact type in future.

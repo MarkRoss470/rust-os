@@ -1,0 +1,35 @@
+ProcessorLocalApic { processor_id: 0, apic_id: 0, flags: ApicFlags { enabled: true, online_capable: false } },
+IoApic { id: 0, reserved0: 0, address: 4273995776, global_system_interrupt_base: 0 },
+IoApicInterruptSourceOverride { bus_source: 0, irq_source: 0, global_system_interrupt: 2, flags: InterruptVectorFlags { polarity: ConformsToBus, trigger_mode: ConformsToBus } },
+IoApicInterruptSourceOverride { bus_source: 0, irq_source: 5, global_system_interrupt: 5, flags: InterruptVectorFlags { polarity: ActiveHigh, trigger_mode: LevelTriggered } },
+IoApicInterruptSourceOverride { bus_source: 0, irq_source: 9, global_system_interrupt: 9, flags: InterruptVectorFlags { polarity: ActiveHigh, trigger_mode: LevelTriggered } },
+IoApicInterruptSourceOverride { bus_source: 0, irq_source: 10, global_system_interrupt: 10, flags: InterruptVectorFlags { polarity: ActiveHigh, trigger_mode: LevelTriggered } },
+IoApicInterruptSourceOverride { bus_source: 0, irq_source: 11, global_system_interrupt: 11, flags: InterruptVectorFlags { polarity: ActiveHigh, trigger_mode: LevelTriggered } },
+LocalApicNonMaskableInterrupts { processor_id: 255, flags: InterruptVectorFlags { polarity: ConformsToBus, trigger_mode: ConformsToBus }, lint: 1 },
+
+ProcessorLocalApic { processor_id: 0, apic_id: 8, flags: ApicFlags { enabled: false, online_capable: false } }
+[DEBUG os::acpi:80] IoApic { id: 1, reserved0: 12, address: 0, global_system_interrupt_base: 65216 }
+[DEBUG os::acpi:80] IoApicInterruptSourceOverride { bus_source: 2, irq_source: 10, global_system_interrupt: 131072, flags: InterruptVectorFlags { polarity: ConformsToBus, trigger_mode: ConformsToBus } }
+[DEBUG os::acpi:80] IoApicInterruptSourceOverride { bus_source: 2, irq_source: 10, global_system_interrupt: 328960, flags: InterruptVectorFlags { polarity: ConformsToBus, trigger_mode: ConformsToBus } }
+[DEBUG os::acpi:80] IoApicInterruptSourceOverride { bus_source: 2, irq_source: 10, global_system_interrupt: 592128, flags: InterruptVectorFlags { polarity: ConformsToBus, trigger_mode: ConformsToBus } }
+[DEBUG os::acpi:80] IoApicInterruptSourceOverride { bus_source: 2, irq_source: 10, global_system_interrupt: 657920, flags: InterruptVectorFlags { polarity: ConformsToBus, trigger_mode: ConformsToBus } }
+[DEBUG os::acpi:80] IoApicInterruptSourceOverride { bus_source: 2, irq_source: 10, global_system_interrupt: 723712, flags: InterruptVectorFlags { polarity: ConformsToBus, trigger_mode: ConformsToBus } }
+[DEBUG os::acpi:80] LocalApicNonMaskableInterrupts { processor_id: 4, flags: InterruptVectorFlags { polarity: Reserved, trigger_mode: EdgeTriggered }, lint: 0 }
+
+[DEBUG acpica_bindings::interface::types::tables::madt:369] [0, 8, 0, 0, 1, 0, 0, 0]
+[DEBUG acpica_bindings::interface::types::tables::madt:369] [1, 12, 0, 0, 0, 0, 192, 254, 0, 0, 0, 0]
+[DEBUG acpica_bindings::interface::types::tables::madt:369] [2, 10, 0, 0, 2, 0, 0, 0, 0, 0]
+[DEBUG acpica_bindings::interface::types::tables::madt:369] [2, 10, 0, 5, 5, 0, 0, 0, 13, 0]
+[DEBUG acpica_bindings::interface::types::tables::madt:369] [2, 10, 0, 9, 9, 0, 0, 0, 13, 0]
+[DEBUG acpica_bindings::interface::types::tables::madt:369] [2, 10, 0, 10, 10, 0, 0, 0, 13, 0]
+[DEBUG acpica_bindings::interface::types::tables::madt:369] [2, 10, 0, 11, 11, 0, 0, 0, 13, 0]
+[DEBUG acpica_bindings::interface::types::tables::madt:369] [4, 6, 255, 0, 0, 1]
+
+[DEBUG os::acpi:80] ProcessorLocalApic { processor_id: 0, apic_id: 0, flags: ApicFlags { enabled: true, online_capable: false } }
+[DEBUG os::acpi:80] IoApic { id: 0, reserved0: 0, address: 4273995776, global_system_interrupt_base: 0 }
+[DEBUG os::acpi:80] IoApicInterruptSourceOverride { bus_source: 0, irq_source: 0, global_system_interrupt: 2, flags: InterruptVectorFlags { polarity: ConformsToBus, trigger_mode: ConformsToBus } }
+[DEBUG os::acpi:80] IoApicInterruptSourceOverride { bus_source: 0, irq_source: 5, global_system_interrupt: 5, flags: InterruptVectorFlags { polarity: ActiveHigh, trigger_mode: LevelTriggered } }
+[DEBUG os::acpi:80] IoApicInterruptSourceOverride { bus_source: 0, irq_source: 9, global_system_interrupt: 9, flags: InterruptVectorFlags { polarity: ActiveHigh, trigger_mode: LevelTriggered } }
+[DEBUG os::acpi:80] IoApicInterruptSourceOverride { bus_source: 0, irq_source: 10, global_system_interrupt: 10, flags: InterruptVectorFlags { polarity: ActiveHigh, trigger_mode: LevelTriggered } }
+[DEBUG os::acpi:80] IoApicInterruptSourceOverride { bus_source: 0, irq_source: 11, global_system_interrupt: 11, flags: InterruptVectorFlags { polarity: ActiveHigh, trigger_mode: LevelTriggered } }
+[DEBUG os::acpi:80] LocalApicNonMaskableInterrupts { processor_id: 255, flags: InterruptVectorFlags { polarity: ConformsToBus, trigger_mode: ConformsToBus }, lint: 1 }

@@ -1,175 +1,582 @@
-//! Structs to parse the ACPI tables, based on [the ACPI spec].
-//!
-//! [the ACPI spec]: https://uefi.org/specs/ACPI/6.5/index.html
+pub mod io_apic;
+pub mod local_apic;
 
-use core::fmt::Debug;
+use core::{convert::Infallible, sync::atomic::Ordering::Relaxed};
 
-use crate::{acpi::rsdp::Rsdp, println};
-
-use self::{
-    fadt::Fadt,
-    madt::Madt,
-    rsdt::{Rsdt, SystemDescriptionTable},
+use acpica_bindings::{
+    handler::AcpiHandler, register_interface, status::AcpiError, types::AcpiPhysicalAddress,
+};
+use log::{debug, info, trace};
+use x86_64::{
+    instructions::{hlt, port::Port},
+    structures::paging::{frame::PhysFrameRange, page::PageRange, Page, PhysFrame},
+    PhysAddr, VirtAddr,
 };
 
-mod fadt;
-pub mod local_apic;
-pub mod io_apic;
-mod madt;
-mod rsdp;
-mod rsdt;
+use crate::{
+    cpu::{register_interrupt_callback, remove_interrupt_callback, CallbackRemoveError},
+    global_state::KERNEL_STATE,
+    graphics::flush,
+    pci, print, println,
+};
 
-#[derive(Debug)]
-pub struct AcpiCache {
-    pub rsdp: Rsdp,
-    pub system_description_table: SystemDescriptionTable,
-    pub fadt: Option<Fadt>,
-    pub madt: Option<Madt>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
+pub enum PowerOffError {
+    Acpi(AcpiError),
+    DidntTurnOff,
 }
 
-/// Initialises ACPI, using the given RSDP table.
+impl From<AcpiError> for PowerOffError {
+    fn from(value: AcpiError) -> Self {
+        Self::Acpi(value)
+    }
+}
+
+/// Powers the machine off by switching to sleep state 5
 ///
 /// # Safety
-/// This function may only be called once.
-/// The given [`PhysAddr`] must point to a valid RSDP structure which describes the system.
-/// All of physical memory must be mapped at the virtual address `physical_memory_offset`
-pub unsafe fn init(rsdp_addr: u64, physical_memory_offset: u64) -> AcpiCache {
-    println!("Initialising ACPI from RSDP at {rsdp_addr:#x}");
+/// This function should not return (unless an error occurs).
+/// All running programs will be stopped and anything in RAM will be lost.
+/// This function should be the last call after all other OS systems have been shut down.
+pub unsafe fn power_off() -> Result<Infallible, PowerOffError> {
+    let mut acpica = KERNEL_STATE.acpica.lock();
 
-    let rsdp_virtual_addr = physical_memory_offset + rsdp_addr;
-    // SAFETY: The pointer pointing to an RSDP table is the caller's responsibility.
-    let rsdp = unsafe { Rsdp::read(rsdp_virtual_addr as *const _).unwrap() };
-    // SAFETY: All of physical memory is mapped at `physical_memory_offset`.
-    let system_table = unsafe { rsdp.get_system_description_table(physical_memory_offset) };
+    // SAFETY: TODO
+    unsafe {
+        acpica.enter_sleep_state_prep(5)?;
 
-    system_table.list_tables();
+        x86_64::instructions::interrupts::disable();
 
-    println!("{:#?}", system_table.madt().unwrap());
-
-    AcpiCache {
-        rsdp,
-        fadt: system_table.fadt().ok(),
-        madt: system_table.madt().ok(),
-        system_description_table: system_table,
+        acpica.enter_sleep_state(5)?;
     }
+
+    // This code shouldn't be run - if execution gets here, return an error
+    Err(PowerOffError::DidntTurnOff)
 }
 
-/// An error occurring while calculating the checksum of an ACPI table.
-/// The stored [`u8`] indicates the sum value of the table's bytes, which should have been 0 but wasn't.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ChecksumError(u8);
-
-/// The common header fields of various ACPI tables
+/// Initialises the [`acpica_bindings`] crate.
 ///
-/// https://uefi.org/specs/ACPI/6.5/05_ACPI_Software_Programming_Model.html#system-description-table-header
-#[repr(C)]
-pub struct SdtHeader {
-    /// The table's signature as a 4 byte ASCII string
-    signature: [u8; 4],
-    /// The length of the table in bytes
-    length: u32,
-    /// The ACPI version the table is using
-    revision: u8,
-    /// A checksum byte to make all bytes in the table add to 0 mod 0x100
-    checksum: u8,
-    /// A 6 byte ASCII string identifying the OEM
-    oem_id: [u8; 6],
-    /// An 8 byte ASCII string identifying the table provided by the OEM
-    /// TODO: check these out more
-    oem_table_id: [u8; 8],
-    /// The revision of the table supplied by the OEM.
-    oem_revision: u32,
-    /// Vendor ID of the utility which created the table.
-    /// For tables containing Definition Blocks, this is the ID for the ASL Compiler.
-    creator_id: u32,
-    /// Revision of the utility that created the table.
-    /// For tables containing Definition Blocks, this is the revision for the ASL Compiler.
-    creator_revision: u32,
+/// # Safety
+/// * This function may only be called once.
+/// * `rsdp_addr` must be the virtual address of the RSDP.
+pub unsafe fn init(rsdp_addr: u64) {
+    trace!(target: "acpi_init", "Initialising ACPICA");
+    flush();
+
+    let acpica_initialization = register_interface(AcpiInterface { rsdp_addr }).unwrap();
+
+    trace!(target: "acpi_init", "Initializing tables");
+    flush();
+
+    let acpica_initialization = acpica_initialization.initialize_tables().unwrap();
+
+    debug_tables(&acpica_initialization);
+
+    // SAFETY: This function is only called once. The passed mcfg is provided by the BIOS / UEFI, so it is accurate.
+    unsafe { pci::init(acpica_initialization.mcfg().unwrap()) }
+
+    trace!(target: "acpi_init", "Loading tables");
+    flush();
+
+    let acpica_initialization = acpica_initialization.load_tables().unwrap();
+
+    trace!(target: "acpi_init", "Enabling subsystem");
+    flush();
+
+    let acpica_initialization = acpica_initialization.enable_subsystem().unwrap();
+
+    trace!(target: "acpi_init", "Initializing objects");
+    flush();
+
+    let acpica_initialization = acpica_initialization.initialize_objects().unwrap();
+
+    let _: Option<()> = acpica_initialization.scan_devices(|handle, _| {
+        let info = handle.get_info().unwrap();
+
+        debug!(
+            "{}: {:?} {:?} {:?} {:?}",
+            handle.path().unwrap(),
+            info.hardware_id(),
+            info.unique_id(),
+            info.class_code(),
+            crate::util::iterator_list_debug::IteratorListDebug::new(info.compatible_id_list())
+        );
+        None
+    });
+    flush();
+
+    KERNEL_STATE.acpica.init(acpica_initialization);
+
+    trace!(target: "acpi_init", "Done initialising ACPICA");
+    flush();
 }
 
-impl SdtHeader {
-    /// The offset of the [`signature`][Self::signature] field from the beginning of the header
-    const SIGNATURE_OFFSET: isize = 0;
-    /// The offset of the [`length`][Self::length] field from the beginning of the header
-    const LENGTH_OFFSET: isize = Self::SIGNATURE_OFFSET + 4;
+/// Prints out debug information about the parsed ACPI tables
+fn debug_tables(
+    acpica_initialization: &acpica_bindings::AcpicaOperation<true, false, false, false>,
+) {
+    println!();
 
-    /// The offset of the start of the table's data from the start of the header
-    const TABLE_START: isize = 36;
+    // for t in acpica_initialization.tables() {
+    //     debug!("{t:?}");
+    // }
 
-    /// Reads the header from the given pointer, and checks the checksum of the whole table.
-    ///
-    /// # Safety
-    /// The pointer must point to the header of an SDT structure.
-    #[rustfmt::skip] // Formatting breaks safety comments
-    unsafe fn read(ptr: *const Self) -> Result<Self, ChecksumError> {
-        // SAFETY: The pointer points to an SDT structure
-        unsafe { Self::check(ptr)?; }
+    // println!();
+    // debug!("MADT: {:?}", acpica_initialization.madt());
 
-        // SAFETY: The pointer is valid for reads, and this read does not exceed the length of SDT header structure
-        Ok(unsafe { core::ptr::read_unaligned(ptr) })
+    // for r in acpica_initialization.madt().records() {
+    //     debug!("{r:?}");
+    // }
+
+    // println!();
+
+    for r in acpica_initialization.mcfg().unwrap().records() {
+        debug!("{r:?}");
     }
 
-    /// Checks the checksum of the entire table
-    ///
-    /// # Safety
-    /// The pointer must point to the header of an SDT data structure
-    unsafe fn check(ptr: *const Self) -> Result<(), ChecksumError> {
-        let mut sum: u8 = 0;
+    println!();
+}
 
-        let length: u32 =
-        // SAFETY: The pointer is valid for reads, and this read does not exceed the length of SDT header structure
-            unsafe { core::ptr::read_unaligned(ptr.byte_offset(Self::LENGTH_OFFSET) as *const _) };
+/// Performs a volatile, unaligned read of a value of the given size in bytes from the given address.
+/// The return type can be inferred but must have the correct size.
+macro_rules! read_physical {
+    ($size: expr, $address: expr) => {{
+        let address = PhysAddr::new($address.0.try_into().unwrap());
 
-        for i in 0..length as isize {
-            // SAFETY: The pointer is valid for reads and this read is less than `length` bytes from the start of the header
-            let byte = unsafe { core::ptr::read_unaligned(ptr.byte_offset(i) as *const _) };
-            sum = sum.wrapping_add(byte);
+        // SAFETY: This read was instructed by ACPICA, so it should be sound
+        let v = unsafe {
+            KERNEL_STATE
+                .physical_memory_accessor
+                .lock()
+                .with_mapping(address, $size, |ptr| {
+                    let array: [u8; $size] = core::ptr::read_volatile(ptr.cast());
+                    core::mem::transmute(array)
+                })
+        };
+
+        v
+    }};
+}
+
+/// Performs a volatile, unaligned write of a value of the given size in bytes to the given address.
+macro_rules! write_physical {
+    ($size: expr, $address: expr, $value: expr) => {{
+        let address = PhysAddr::new($address.0.try_into().unwrap());
+
+        // SAFETY: This write was instructed by ACPICA, so it should be sound
+        unsafe {
+            KERNEL_STATE
+                .physical_memory_accessor
+                .lock()
+                .with_mapping(address, $size, |ptr| {
+                    let array: [u8; $size] = core::mem::transmute($value);
+                    core::ptr::write_volatile(ptr.cast(), array);
+                })
+        };
+    }};
+}
+
+/// The type which implements [`AcpiHandler`] in order to interact with the [`acpica_bindings`] crate
+#[derive(Debug)]
+struct AcpiInterface {
+    /// The physical address of the RSDP
+    rsdp_addr: u64,
+}
+
+// SAFETY: TODO
+unsafe impl AcpiHandler for AcpiInterface {
+    unsafe fn predefined_override(
+        &mut self,
+        predefined_object: &acpica_bindings::types::AcpiPredefinedNames,
+    ) -> Result<Option<alloc::string::String>, acpica_bindings::status::AcpiError> {
+        debug!(target: "predefined_override", "Name: {:?}", predefined_object.name());
+        debug!(target: "predefined_override", "Object: {:?}", predefined_object.object());
+
+        Ok(None)
+    }
+
+    fn get_root_pointer(&mut self) -> acpica_bindings::types::AcpiPhysicalAddress {
+        debug!("Root pointer is {:#x}", self.rsdp_addr);
+        AcpiPhysicalAddress(self.rsdp_addr as _)
+    }
+
+    unsafe fn map_memory(
+        &mut self,
+        physical_address: acpica_bindings::types::AcpiPhysicalAddress,
+        length: usize,
+    ) -> Result<*mut u8, acpica_bindings::types::AcpiMappingError> {
+        // trace!(target: "map_memory", "Mapping {length} bytes from {physical_address:?}");
+
+        let start_frame = PhysFrame::containing_address(PhysAddr::new(physical_address.0 as _));
+        let num_frames = length as u64 / 4096 + 2;
+
+        // SAFETY: The address is valid for reads
+        let mapping = unsafe {
+            KERNEL_STATE
+                .physical_memory_accessor
+                .lock()
+                .map_frames(PhysFrameRange {
+                    start: start_frame,
+                    end: start_frame + num_frames,
+                })
+        };
+
+        // SAFETY: Parameter to `add` is less than 4096 so can't overflow
+        unsafe {
+            Ok(mapping
+                .start
+                .start_address()
+                .as_ptr::<u8>()
+                .add(physical_address.0 % 4096)
+                .cast_mut())
         }
+    }
 
-        if sum != 0 {
-            Err(ChecksumError(sum))
-        } else {
-            Ok(())
+    unsafe fn unmap_memory(&mut self, address: *mut u8, length: usize) {
+        // trace!(target: "unmap_memory", "Unmapping {length} bytes from {address:?}");
+
+        let start_page = Page::containing_address(VirtAddr::new(address as _));
+        let num_pages = length as u64 / 4096 + 2;
+
+        // SAFETY: This memory was previously mapped by ACPICA and is no longer in use
+        unsafe {
+            KERNEL_STATE
+                .physical_memory_accessor
+                .lock()
+                .unmap_frames(PageRange {
+                    start: start_page,
+                    end: start_page + num_pages,
+                });
         }
     }
-}
 
-impl Debug for SdtHeader {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("SdtHeader")
-            .field("signature", &core::str::from_utf8(&self.signature).unwrap())
-            .field("length", &self.length)
-            .field("revision", &self.revision)
-            .field("checksum", &self.checksum)
-            .field("oem_id", &core::str::from_utf8(&self.oem_id).unwrap())
-            .field(
-                "oem_table_id",
-                &core::str::from_utf8(&self.oem_table_id).unwrap(),
-            )
-            .field("oem_revision", &self.oem_revision)
-            .field("creator_id", &self.creator_id)
-            .field("creator_revision", &self.creator_revision)
-            .finish()
+    fn get_physical_address(
+        &mut self,
+        logical_address: *mut u8,
+    ) -> Result<
+        Option<acpica_bindings::types::AcpiPhysicalAddress>,
+        acpica_bindings::status::AcpiError,
+    > {
+        todo!()
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use core::mem::offset_of;
+    unsafe fn install_interrupt_handler(
+        &mut self,
+        interrupt_number: u32,
+        callback: acpica_bindings::types::AcpiInterruptCallback,
+    ) -> Result<(), acpica_bindings::status::AcpiError> {
+        register_interrupt_callback(
+            interrupt_number
+                .try_into()
+                .expect("Interrupt number should have been <= 255"),
+            callback,
+        )
+        .map_err(|_| AcpiError::Error)
+    }
 
-    use crate::acpi::SdtHeader;
+    unsafe fn remove_interrupt_handler(
+        &mut self,
+        interrupt_number: u32,
+        callback: acpica_bindings::types::AcpiInterruptCallbackTag,
+    ) -> Result<(), acpica_bindings::status::AcpiError> {
+        match remove_interrupt_callback(interrupt_number.try_into().unwrap(), callback) {
+            Ok(()) => Ok(()),
+            Err(CallbackRemoveError::LockTaken) => panic!(),
+            Err(CallbackRemoveError::NotFound) => Err(AcpiError::NotExist),
+        }
+    }
 
-    #[test_case]
-    /// Tests that the offsets of [`SdtHeader`] match the spec
-    fn test_sdt_header_field_offsets() {
-        assert_eq!(offset_of!(SdtHeader, signature), 0);
-        assert_eq!(offset_of!(SdtHeader, length), 4);
-        assert_eq!(offset_of!(SdtHeader, revision), 8);
-        assert_eq!(offset_of!(SdtHeader, checksum), 9);
-        assert_eq!(offset_of!(SdtHeader, oem_id), 10);
-        assert_eq!(offset_of!(SdtHeader, oem_table_id), 16);
-        assert_eq!(offset_of!(SdtHeader, oem_revision), 24);
-        assert_eq!(offset_of!(SdtHeader, creator_id), 28);
-        assert_eq!(offset_of!(SdtHeader, creator_revision), 32);
+    fn get_thread_id(&mut self) -> u64 {
+        1
+    }
+
+    fn printf(&mut self, message: core::fmt::Arguments) {
+        if KERNEL_STATE.print_acpica_debug.load(Relaxed) {
+            print!("{message}");
+        }
+    }
+
+    unsafe fn execute(
+        &mut self,
+        // callback_type: AcpiExecuteType,
+        callback: acpica_bindings::types::AcpiThreadCallback,
+    ) -> Result<(), acpica_bindings::status::AcpiError> {
+        todo!()
+    }
+
+    unsafe fn wait_for_events(&mut self) {
+        todo!()
+    }
+
+    unsafe fn sleep(&mut self, millis: usize) {
+        let target_kernel_ticks = KERNEL_STATE.ticks() + millis / 10;
+        while KERNEL_STATE.ticks() < target_kernel_ticks {
+            hlt();
+        }
+    }
+
+    unsafe fn stall(&mut self, micros: usize) {
+        todo!()
+    }
+
+    unsafe fn read_port_u8(
+        &mut self,
+        address: acpica_bindings::types::AcpiIoAddress,
+    ) -> Result<u8, acpica_bindings::status::AcpiError> {
+        let mut port = Port::new(address.0.try_into().unwrap());
+        // SAFETY: ACPICA instructed this read so it is probably sound
+        unsafe { Ok(port.read()) }
+    }
+
+    unsafe fn read_port_u16(
+        &mut self,
+        address: acpica_bindings::types::AcpiIoAddress,
+    ) -> Result<u16, acpica_bindings::status::AcpiError> {
+        let mut port = Port::new(address.0.try_into().unwrap());
+        // SAFETY: ACPICA instructed this read so it is probably sound
+        unsafe { Ok(port.read()) }
+    }
+
+    unsafe fn read_port_u32(
+        &mut self,
+        address: acpica_bindings::types::AcpiIoAddress,
+    ) -> Result<u32, acpica_bindings::status::AcpiError> {
+        let mut port = Port::new(address.0.try_into().unwrap());
+        // SAFETY: ACPICA instructed this read so it is probably sound
+        unsafe { Ok(port.read()) }
+    }
+
+    unsafe fn write_port_u8(
+        &mut self,
+        address: acpica_bindings::types::AcpiIoAddress,
+        value: u8,
+    ) -> Result<(), acpica_bindings::status::AcpiError> {
+        let mut port = Port::new(address.0.try_into().unwrap());
+        // SAFETY: ACPICA instructed this write so it is probably sound
+        unsafe { port.write(value) };
+        Ok(())
+    }
+
+    unsafe fn write_port_u16(
+        &mut self,
+        address: acpica_bindings::types::AcpiIoAddress,
+        value: u16,
+    ) -> Result<(), acpica_bindings::status::AcpiError> {
+        let mut port = Port::new(address.0.try_into().unwrap());
+        // SAFETY: ACPICA instructed this write so it is probably sound
+        unsafe { port.write(value) };
+        Ok(())
+    }
+
+    unsafe fn write_port_u32(
+        &mut self,
+        address: acpica_bindings::types::AcpiIoAddress,
+        value: u32,
+    ) -> Result<(), acpica_bindings::status::AcpiError> {
+        let mut port = Port::new(address.0.try_into().unwrap());
+        // SAFETY: ACPICA instructed this write so it is probably sound
+        unsafe { port.write(value) };
+        Ok(())
+    }
+
+    unsafe fn get_timer(&mut self) -> u64 {
+        // TODO: actually implement a timer
+        trace!("Getting timer");
+        0x5000_0000_0000
+    }
+
+    unsafe fn read_physical_u8(&mut self, address: AcpiPhysicalAddress) -> Result<u8, AcpiError> {
+        Ok(read_physical!(1, address))
+    }
+
+    unsafe fn read_physical_u16(&mut self, address: AcpiPhysicalAddress) -> Result<u16, AcpiError> {
+        Ok(read_physical!(2, address))
+    }
+
+    unsafe fn read_physical_u32(&mut self, address: AcpiPhysicalAddress) -> Result<u32, AcpiError> {
+        Ok(read_physical!(4, address))
+    }
+
+    unsafe fn read_physical_u64(&mut self, address: AcpiPhysicalAddress) -> Result<u64, AcpiError> {
+        Ok(read_physical!(8, address))
+    }
+
+    unsafe fn write_physical_u8(
+        &mut self,
+        address: AcpiPhysicalAddress,
+        value: u8,
+    ) -> Result<(), AcpiError> {
+        Ok(write_physical!(1, address, value))
+    }
+
+    unsafe fn write_physical_u16(
+        &mut self,
+        address: AcpiPhysicalAddress,
+        value: u16,
+    ) -> Result<(), AcpiError> {
+        Ok(write_physical!(2, address, value))
+    }
+
+    unsafe fn write_physical_u32(
+        &mut self,
+        address: AcpiPhysicalAddress,
+        value: u32,
+    ) -> Result<(), AcpiError> {
+        Ok(write_physical!(4, address, value))
+    }
+
+    unsafe fn write_physical_u64(
+        &mut self,
+        address: AcpiPhysicalAddress,
+        value: u64,
+    ) -> Result<(), AcpiError> {
+        Ok(write_physical!(8, address, value))
+    }
+
+    unsafe fn readable(&mut self, pointer: *mut core::ffi::c_void, length: usize) -> bool {
+        todo!()
+    }
+
+    unsafe fn writable(&mut self, pointer: *mut core::ffi::c_void, length: usize) -> bool {
+        todo!()
+    }
+
+    unsafe fn read_pci_config_u8(
+        &mut self,
+        id: acpica_bindings::types::AcpiPciId,
+        register: usize,
+    ) -> Result<u8, AcpiError> {
+        Ok(crate::pci::get_pci_ptr::<u8>(
+            id.segment,
+            id.bus.try_into().unwrap(),
+            id.device.try_into().unwrap(),
+            id.function.try_into().unwrap(),
+            register.try_into().unwrap(),
+        )
+        .read())
+    }
+
+    unsafe fn read_pci_config_u16(
+        &mut self,
+        id: acpica_bindings::types::AcpiPciId,
+        register: usize,
+    ) -> Result<u16, AcpiError> {
+        Ok(crate::pci::get_pci_ptr::<u16>(
+            id.segment,
+            id.bus.try_into().unwrap(),
+            id.device.try_into().unwrap(),
+            id.function.try_into().unwrap(),
+            register.try_into().unwrap(),
+        )
+        .read())
+    }
+
+    unsafe fn read_pci_config_u32(
+        &mut self,
+        id: acpica_bindings::types::AcpiPciId,
+        register: usize,
+    ) -> Result<u32, AcpiError> {
+        Ok(crate::pci::get_pci_ptr::<u32>(
+            id.segment,
+            id.bus.try_into().unwrap(),
+            id.device.try_into().unwrap(),
+            id.function.try_into().unwrap(),
+            register.try_into().unwrap(),
+        )
+        .read())
+    }
+
+    unsafe fn read_pci_config_u64(
+        &mut self,
+        id: acpica_bindings::types::AcpiPciId,
+        register: usize,
+    ) -> Result<u64, AcpiError> {
+        Ok(crate::pci::get_pci_ptr::<u64>(
+            id.segment,
+            id.bus.try_into().unwrap(),
+            id.device.try_into().unwrap(),
+            id.function.try_into().unwrap(),
+            register.try_into().unwrap(),
+        )
+        .read())
+    }
+
+    unsafe fn write_pci_config_u8(
+        &mut self,
+        id: acpica_bindings::types::AcpiPciId,
+        register: usize,
+        value: u8,
+    ) -> Result<(), AcpiError> {
+        Ok(crate::pci::get_pci_ptr::<u8>(
+            id.segment,
+            id.bus.try_into().unwrap(),
+            id.device.try_into().unwrap(),
+            id.function.try_into().unwrap(),
+            register.try_into().unwrap(),
+        )
+        .write(value))
+    }
+
+    unsafe fn write_pci_config_u16(
+        &mut self,
+        id: acpica_bindings::types::AcpiPciId,
+        register: usize,
+        value: u16,
+    ) -> Result<(), AcpiError> {
+        Ok(crate::pci::get_pci_ptr::<u16>(
+            id.segment,
+            id.bus.try_into().unwrap(),
+            id.device.try_into().unwrap(),
+            id.function.try_into().unwrap(),
+            register.try_into().unwrap(),
+        )
+        .write(value))
+    }
+
+    unsafe fn write_pci_config_u32(
+        &mut self,
+        id: acpica_bindings::types::AcpiPciId,
+        register: usize,
+        value: u32,
+    ) -> Result<(), AcpiError> {
+        Ok(crate::pci::get_pci_ptr::<u32>(
+            id.segment,
+            id.bus.try_into().unwrap(),
+            id.device.try_into().unwrap(),
+            id.function.try_into().unwrap(),
+            register.try_into().unwrap(),
+        )
+        .write(value))
+    }
+
+    unsafe fn write_pci_config_u64(
+        &mut self,
+        id: acpica_bindings::types::AcpiPciId,
+        register: usize,
+        value: u64,
+    ) -> Result<(), AcpiError> {
+        Ok(crate::pci::get_pci_ptr::<u64>(
+            id.segment,
+            id.bus.try_into().unwrap(),
+            id.device.try_into().unwrap(),
+            id.function.try_into().unwrap(),
+            register.try_into().unwrap(),
+        )
+        .write(value))
+    }
+
+    unsafe fn signal_fatal(
+        &mut self,
+        _fatal_type: u32,
+        _code: u32,
+        _argument: u32,
+    ) -> Result<(), AcpiError> {
+        todo!("Fatal signal")
+    }
+
+    unsafe fn signal_breakpoint(&mut self, message: &str) -> Result<(), AcpiError> {
+        info!(target: "signal_breakpoint", "Breakpoint hit: {message}");
+        Ok(())
     }
 }

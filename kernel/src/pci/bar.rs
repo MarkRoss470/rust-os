@@ -7,8 +7,8 @@ use x86_64::{
     PhysAddr,
 };
 
+use super::{devices::PciRegister, PciMappedFunction, PcieController};
 use crate::println;
-use super::devices::PciRegister;
 
 /// The address of a region in memory used by the PCI device
 #[derive(Clone, Copy)]
@@ -57,23 +57,26 @@ pub enum BarValue {
 }
 
 /// A specific base address register of a PCI device
-pub struct Bar {
+pub struct Bar<'a> {
+    function: &'a PciMappedFunction,
     /// The register which this BAR is in
-    register: PciRegister,
+    register: u8,
 }
 
-impl Bar {
+impl<'a> Bar<'a> {
     /// # Safety
-    /// The passed `register` must be part of a BAR. If the BAR is 64-bit,
-    /// it must be the register with the lower offset.
-    pub unsafe fn new(register: PciRegister) -> Self {
-        Self { register }
+    /// * The passed `register` must be part of a BAR. If the BAR is 64-bit,
+    ///     it must be the register with the lower offset.
+    /// * Only one [`Bar`] struct may exist for each BAR at one time. 
+    ///     No other code may access the BAR while this struct exists.
+    pub unsafe fn new(function: &'a PciMappedFunction, register: u8) -> Self {
+        Self { function, register }
     }
 
     /// Reads the value of the BAR
     pub fn read_value(&self) -> BarValue {
         // SAFETY: This struct is unsafe to construct from a PciRegister which is not a BAR
-        let lower_32 = unsafe { self.register.read_u32() };
+        let lower_32 = unsafe { self.function.read_reg(self.register) };
         let prefetchable = lower_32 & (1 << 3) != 0;
         let bar_type = (lower_32 >> 1) & 0b11;
 
@@ -90,7 +93,7 @@ impl Bar {
             0x02 => {
                 // SAFETY: This struct is unsafe to construct from a PciRegister which is not a BAR,
                 // And any BAR with a type of 0x02 is guaranteed for the next register to be part of the same BAR.
-                let upper_32 = unsafe { self.register.next().unwrap().read_u32() };
+                let upper_32 = unsafe { self.function.read_reg(self.register + 1) };
 
                 // println!("Second BAR: 0b{upper_32:b}");
 
@@ -108,26 +111,27 @@ impl Bar {
 
     /// Gets the size of the BAR
     pub fn get_size(&self) -> u64 {
+        const STATUS_AND_COMMAND_REGISTER: u8 = 1;
+
         // Disable both IO space and memory space accesses while performing all 1s write
         // to prevent it from being misinterpreted
-        let function = &self.register.get_function();
-        let register = function.register(4).unwrap();
 
         // SAFETY: Reads from PCI configuration registers shouldn't have side effects
         let previous_command = unsafe {
             // Take only the bottom 2 bytes because the top 2 bytes are the status register
-            register.read_u32() & 0xffff
+            self.function.read_reg(STATUS_AND_COMMAND_REGISTER) & 0xffff
         };
 
         // SAFETY: This write sets the Memory Space and I/O Space bits of the command register to 0.
         // This disables memory and IO space accesses.
         // This operation is sound because the bits are reset at the end of the method.
         unsafe {
-            register.write_u32(previous_command & !0b11);
+            self.function
+                .write_reg(STATUS_AND_COMMAND_REGISTER, previous_command & !0b11);
         }
 
         // SAFETY: memory and IO space accesses were disabled above, so this write can't have side effects.
-        let value_after_write = unsafe { self.register.write_and_reset(u32::MAX) };
+        let value_after_write = unsafe { self.function.write_and_reset(self.register, u32::MAX) };
 
         // Mask out the BAR's flag bits
         let masked_address = value_after_write & !0b1111;
@@ -136,7 +140,8 @@ impl Bar {
         // This write also writes all 0s to the status register,
         // but all the bits in that register are either read only or RW1C (writing 0 has no effect).
         unsafe {
-            register.write_u32(previous_command);
+            self.function
+                .write_reg(STATUS_AND_COMMAND_REGISTER, previous_command)
         }
 
         // Only the writes to the top bits will have succeeded, so doing a bitwise not will make this only the lower bits.
@@ -158,7 +163,7 @@ impl Bar {
             MemorySpaceBarBaseAddress::Small(_) => {
                 // SAFETY: The safety of this operation is the caller's responsibility.
                 unsafe {
-                    self.register.write_u32(value);
+                    self.function.write_reg(self.register, value);
                 }
 
                 debug_assert!(
@@ -168,9 +173,9 @@ impl Bar {
             MemorySpaceBarBaseAddress::Large(_) => {
                 // SAFETY: The safety of this operation is the caller's responsibility.
                 unsafe {
-                    self.register.write_u32(value);
+                    self.function.write_reg(self.register, value);
                     // Clear the top 32 bits
-                    self.register.next().unwrap().write_u32(0);
+                    self.function.write_reg(self.register + 1, 0);
                 }
 
                 debug_assert!(
@@ -205,15 +210,14 @@ impl Bar {
                 // SAFETY: The safety of this operation is the caller's responsibility.
                 unsafe {
                     // Write the upper 32 bits
-                    self.register
-                        .next()
-                        .unwrap()
-                        .write_u32((value >> 32) as u32);
-                    // Write the lower 32 bits
-                    self.register.write_u32(value as u32);
+                    self.function
+                        .write_reg(self.register + 1, (value >> 32) as u32);
 
-                    let r0 = self.register.read_u32() & !0b1111;
-                    let r1 = self.register.next().unwrap().read_u32();
+                    // Write the lower 32 bits
+                    self.function.write_reg(self.register, value as u32);
+
+                    let r0 = self.function.read_reg(self.register) & !0b1111;
+                    let r1 = self.function.read_reg(self.register + 1);
 
                     println!("r0: 0x{r0:x}, r1: 0x{r1:x}");
                     println!("base address: 0x{:x}", ((r1 as u64) << 32) | (r0 as u64));
@@ -237,7 +241,7 @@ impl Bar {
     }
 
     /// Gets the physical frames this BAR is mapped to.
-    /// 
+    ///
     /// # Panics
     /// * If the bar is IO space
     /// * If the value of the BAR is 0
@@ -251,13 +255,18 @@ impl Bar {
             MemorySpaceBarBaseAddress::Large(a) => a,
         };
 
-        if base_address == 0 { panic!("BAR was not allocated by the BIOS") }
+        if base_address == 0 {
+            panic!("BAR was not allocated by the BIOS")
+        }
 
         let size = self.get_size();
 
         let start_page = PhysFrame::containing_address(PhysAddr::new(base_address));
 
-        PhysFrameRange { start: start_page, end: start_page + size / 0x1000 }
+        PhysFrameRange {
+            start: start_page,
+            end: start_page + size / 0x1000,
+        }
     }
 
     /// Prints out the BAR's info in a debug format

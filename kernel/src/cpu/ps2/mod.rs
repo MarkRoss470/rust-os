@@ -2,12 +2,10 @@
 
 pub mod devices;
 
+use log::debug;
 use x86_64::instructions::{hlt, port::Port};
 
-use crate::{
-    global_state::{GlobalState, KERNEL_STATE},
-    println,
-};
+use crate::global_state::{GlobalState, KERNEL_STATE};
 use devices::Ps2Device;
 
 #[bitfield(u8)]
@@ -135,17 +133,19 @@ impl Ps2Controller8042 {
     /// # Safety
     /// This function may only be called once.
     pub unsafe fn new() -> Option<Result<Self, Ps2ControllerInitialisationError>> {
-        let lock = KERNEL_STATE.acpi_cache.lock();
-        let fadt = &lock.fadt;
+        let lock = KERNEL_STATE.acpica.lock();
+
+        let fadt = lock.fadt();
 
         // If the system has no 8042 controller
         // If the table doesn't have the `has_8042_controller` field,
         // assume that it does have a controller.
-        if !fadt
-            .as_ref()
-            .map(|fadt| fadt.boot_architecture_flags().has_8042_controller())
-            .unwrap_or(true)
-        {
+        let has_8042_controller = match fadt.boot_architecture_flags() {
+            Some(flags) => flags.has_8042_controller(),
+            None => true,
+        };
+
+        if !has_8042_controller {
             return None;
         }
 
@@ -244,30 +244,30 @@ impl Ps2Controller8042 {
     /// # Safety
     /// This method may only be called once, and only during booting.
     unsafe fn init(&mut self) -> Result<(), Ps2ControllerInitialisationError> {
-        println!("Disabling controller");
+        debug!(target: "ps2_debug", "Disabling controller");
 
         // SAFETY: This will disable the controller while it is being set up.
         unsafe { self.disable()? }
 
-        println!("Flushing buffers");
+        debug!(target: "ps2_debug", "Flushing buffers");
 
         // SAFETY:
         unsafe { self.flush_buffers()? }
 
-        println!("Disabling ports");
+        debug!(target: "ps2_debug", "Disabling ports");
 
         // Disable translation and interrupts, and check whether the controller is dual-channelled
         let has_secondary_port = {
-            println!("Reading config");
+            debug!(target: "ps2_debug", "Reading config");
             let mut config = self.ports.read_configuration()?;
 
-            println!("Updating values");
+            debug!(target: "ps2_debug", "Updating values");
 
             config.set_primary_port_translation(false);
             config.set_primary_port_interrupts_enabled(false);
             config.set_secondary_port_interrupts_enabled(false);
 
-            println!("Writing config");
+            debug!(target: "ps2_debug", "Writing config");
 
             // SAFETY: This write will disable translation and interrupts for both devices.
             unsafe { self.ports.write_configuration(config)? }
@@ -280,8 +280,8 @@ impl Ps2Controller8042 {
 
         self.dual_channelled = has_secondary_port;
 
-        println!("Controller is dual-channelled: {has_secondary_port}");
-        println!("Running tests");
+        debug!(target: "ps2_debug", "Controller is dual-channelled: {has_secondary_port}");
+        debug!(target: "ps2_debug", "Running tests");
 
         // Test components
         // SAFETY: The controller is disabled and is not in operation.
@@ -293,7 +293,7 @@ impl Ps2Controller8042 {
             }
         }
 
-        println!("Re-enabling devices");
+        debug!(target: "ps2_debug", "Re-enabling devices");
 
         // Re-enable devices
         // SAFETY: The devices being enabled have interrupt handlers registered for them.
@@ -304,7 +304,7 @@ impl Ps2Controller8042 {
             if let Some(mut d1) = self.ports.reinit_port(Ps2Port::Primary)? {
                 d1.init(Ps2Port::Primary, &mut self.ports)?;
 
-                println!("device connected to port 1: {:?}", d1);
+                debug!(target: "ps2_debug", "device connected to port 1: {:?}", d1);
 
                 self.primary_port_connection = Some(d1);
             }
@@ -321,7 +321,7 @@ impl Ps2Controller8042 {
                 if let Some(mut d2) = self.ports.reinit_port(Ps2Port::Secondary)? {
                     d2.init(Ps2Port::Secondary, &mut self.ports)?;
 
-                    println!("device connected to port 1: {:?}", d2);
+                    debug!(target: "ps2_debug", "device connected to port 1: {:?}", d2);
 
                     self.secondary_port_connection = Some(d2);
                 }
@@ -331,7 +331,7 @@ impl Ps2Controller8042 {
             }
         }
 
-        println!("Enabling interrupts");
+        debug!(target: "ps2_debug", "Enabling interrupts");
 
         // Re-enable interrupts for both ports
         // SAFETY: TODO
@@ -382,12 +382,12 @@ impl Ps2Ports {
     ) -> Result<ConfigurationRegister, Ps2ControllerInitialisationError> {
         self.wait_for_write_buffer_empty()?;
 
-        println!("Status is valid: sending read command");
+        debug!(target: "ps2_read_configuration", "Status is valid: sending read command");
 
         // SAFETY: The first byte of the controller's memory is the configuration register.
         unsafe { self.send_command(Ps2ControllerCommand::ReadByte(0))? }
 
-        println!("Reading byte");
+        debug!(target: "ps2_read_configuration", "Reading byte");
 
         // SAFETY: The above command writes its result to the data port.
         unsafe {

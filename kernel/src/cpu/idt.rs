@@ -1,21 +1,156 @@
 //! Functionality to manage the Interrupt Descriptor Table, and the PICs which provide hardware interrupts
 
+use acpica_bindings::types::{AcpiInterruptCallback, AcpiInterruptHandledStatus, AcpiInterruptCallbackTag};
+use alloc::collections::BTreeSet;
+use alloc::vec::Vec;
+use log::{trace, warn};
+use spin::Mutex;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
 use crate::{
-    cpu::{interrupt_controllers::end_interrupt, ps2::PS2_CONTROLLER},
+    cpu::interrupt_controllers::end_interrupt,
     global_state::KERNEL_STATE,
-    graphics::{Colour, WRITER}, println,
+    graphics::{Colour, WRITER, flush},
+    println,
     scheduler::poll_tasks,
 };
+// use crate::cpu::ps2::PS2_CONTROLLER;
 
 use super::{
     gdt::{DOUBLE_FAULT_STACK_INDEX, INTERRUPTS_STACK_INDEX},
-    interrupt_controllers::PIC_1_OFFSET,
+    interrupt_controllers::PIC_1_OFFSET, ps2::PS2_CONTROLLER,
 };
 
 /// The Interrupt Descriptor Table
 static mut IDT: Option<InterruptDescriptorTable> = None;
+
+static ACPI_CALLBACKS: Mutex<[Vec<AcpiInterruptCallback>; 256]> = {
+    const EMPTY_SET: Vec<AcpiInterruptCallback> = Vec::new();
+    Mutex::new([EMPTY_SET; 256])
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallbackAddError {
+    LockTaken,
+}
+
+pub fn register_interrupt_callback(
+    interrupt_number: u8,
+    callback: AcpiInterruptCallback,
+) -> Result<(), CallbackAddError> {
+    trace!(target: "register_interrupt_callback", "Registering callback: interrupt number: {interrupt_number:#x}");
+
+    let mut callbacks = ACPI_CALLBACKS
+        .try_lock()
+        .ok_or(CallbackAddError::LockTaken)?;
+
+    callbacks[interrupt_number as usize].push(callback);
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallbackRemoveError {
+    LockTaken,
+    NotFound,
+}
+
+/// Removes an interrupt callback which was previously registered with [`register_interrupt_callback`].
+/// The callback is specified by a tag rather than by the callback itself.
+pub fn remove_interrupt_callback(
+    interrupt_number: u8,
+    tag: AcpiInterruptCallbackTag,
+) -> Result<(), CallbackRemoveError> {
+    trace!(target: "remove_interrupt_callback", "Removing callback: interrupt number: {interrupt_number:#x}");
+
+    let mut callbacks = ACPI_CALLBACKS
+        .try_lock()
+        .ok_or(CallbackRemoveError::LockTaken)?;
+
+    let mut found = false;
+
+    callbacks[interrupt_number as usize].retain(|callback| {
+        if callback.is_tag(&tag) {
+            found = true;
+            false
+        } else {
+            true
+        }
+    });
+
+    if !found {
+        Err(CallbackRemoveError::NotFound)
+    } else {
+        Ok(())
+    }
+}
+
+/// Registers all normal interrupt handlers (which don't take an error code) to [`unknown_interrupt`].
+///
+/// This is a macro rather than a normal loop because [`unknown_interrupt`] needs to take its vector number as a const generic.
+/// This means each of the 200+ vectors needs its own line of code to set the interrupt.
+macro_rules! register_interfaces {
+    // Registers a single vector
+    ($idt: expr, single, $i: expr) => {
+        $idt[$i].set_handler_fn(unknown_interrupt::<{ $i }>);
+    };
+
+    // Registers ten consecutive vectors
+    ($idt: expr, repeat_ten, $i: expr) => {
+        register_interfaces!($idt, single, { 0 + $i });
+        register_interfaces!($idt, single, { 1 + $i });
+        register_interfaces!($idt, single, { 2 + $i });
+        register_interfaces!($idt, single, { 3 + $i });
+        register_interfaces!($idt, single, { 4 + $i });
+        register_interfaces!($idt, single, { 5 + $i });
+        register_interfaces!($idt, single, { 6 + $i });
+        register_interfaces!($idt, single, { 7 + $i });
+        register_interfaces!($idt, single, { 8 + $i });
+        register_interfaces!($idt, single, { 9 + $i });
+    };
+
+    // Registers one hundred consecutive vectors
+    ($idt: expr, repeat_hundred, $i: expr) => {
+        register_interfaces!($idt, repeat_ten, { 00 + $i });
+        register_interfaces!($idt, repeat_ten, { 10 + $i });
+        register_interfaces!($idt, repeat_ten, { 20 + $i });
+        register_interfaces!($idt, repeat_ten, { 30 + $i });
+        register_interfaces!($idt, repeat_ten, { 40 + $i });
+        register_interfaces!($idt, repeat_ten, { 50 + $i });
+        register_interfaces!($idt, repeat_ten, { 60 + $i });
+        register_interfaces!($idt, repeat_ten, { 70 + $i });
+        register_interfaces!($idt, repeat_ten, { 80 + $i });
+        register_interfaces!($idt, repeat_ten, { 90 + $i });
+    };
+
+    // Registers all non-error-code vectors
+    ($idt: expr) => {
+        register_interfaces!($idt, single, 0);
+        register_interfaces!($idt, single, 1);
+        register_interfaces!($idt, single, 2);
+        register_interfaces!($idt, single, 3);
+        register_interfaces!($idt, single, 4);
+        register_interfaces!($idt, single, 5);
+        register_interfaces!($idt, single, 6);
+        register_interfaces!($idt, single, 7);
+
+        register_interfaces!($idt, single, 9);
+        register_interfaces!($idt, single, 16);
+        register_interfaces!($idt, single, 19);
+        register_interfaces!($idt, single, 20);
+
+        register_interfaces!($idt, repeat_hundred, 32);
+        register_interfaces!($idt, repeat_hundred, 132);
+
+        register_interfaces!($idt, repeat_ten, 232);
+        register_interfaces!($idt, repeat_ten, 242);
+
+        register_interfaces!($idt, single, 252);
+        register_interfaces!($idt, single, 253);
+        register_interfaces!($idt, single, 254);
+        register_interfaces!($idt, single, 255);
+    };
+}
 
 /// Loads the IDT structure
 ///
@@ -57,21 +192,24 @@ pub unsafe fn init() {
             .set_stack_index(INTERRUPTS_STACK_INDEX);
     }
 
-    for i in 0..255 {
-        match i {
-            8 | 10..=15 | 17 | 18 | 21..=31 => continue,
-            _ => idt[i].set_handler_fn(unknown_interrupt),
-        };
-    }
+    register_interfaces!(idt);
+
+    // for i in 0..255 {
+    //     match i {
+    //         8 | 10..=15 | 17 | 18 | 21..=31 => continue,
+    //         _ => idt[i].set_handler_fn(unknown_interrupt),
+    //     };
+    // }
 
     // SAFETY: This function is called after `init_gdt`, so the `INTERRUPTS_STACK` is registered.
     unsafe {
         idt.breakpoint
             .set_handler_fn(breakpoint_handler)
             .set_stack_index(INTERRUPTS_STACK_INDEX);
-        idt.page_fault
-            .set_handler_fn(page_fault_handler)
-            .set_stack_index(INTERRUPTS_STACK_INDEX);
+
+        idt.page_fault.set_handler_fn(page_fault_handler);
+        // .set_stack_index(INTERRUPTS_STACK_INDEX);
+
         idt.invalid_opcode
             .set_handler_fn(invalid_opcode)
             .set_stack_index(INTERRUPTS_STACK_INDEX);
@@ -122,9 +260,30 @@ impl InterruptIndex {
     }
 }
 
-/// Interrupt handler for any interrupt there is not a dedicated handler for
-extern "x86-interrupt" fn unknown_interrupt(stack_frame: InterruptStackFrame) {
-    panic!("Unknown interrupt\nstack_frame: {stack_frame:?}");
+/// Interrupt handler for any interrupt there is not a dedicated handler for.
+///
+/// # Why a const generic interrupt number?
+/// This handler covers all the unknown interrupts, but it needs to know which interrupt is currently executing
+/// in order to call the right callbacks. This information is not provided by the CPU, and there is no reliable way
+/// to get it from the interrupt controller. This also can't be captured using closures, because this function is
+/// called by CPU internals and needs to be a function pointer rather than an [`Fn`] trait object.
+///
+/// The remaining solution is to make a different version of the function in memory for each interrupt served,
+/// and const generics are just the tool for the job.
+extern "x86-interrupt" fn unknown_interrupt<const N: usize>(_: InterruptStackFrame) {
+    /// A non-generic inner function - this stops all this code being monomorphized, which would waste memory
+    fn inner(interrupt: usize) {
+        warn!(target: "unknown_interrupt", "Unknown interrupt - calling ACPICA callbacks {interrupt}");
+
+        let callbacks = &mut ACPI_CALLBACKS.try_lock().unwrap()[interrupt];
+        callbacks.retain_mut(|callback| {
+            // SAFETY: This is the correct interrupt handler
+            let r = unsafe { callback.call() };
+            r != AcpiInterruptHandledStatus::Handled
+        });
+    }
+
+    inner(N);
 }
 
 /// Interrupt handler for any interrupt there is not a dedicated handler for, for interrupts with an error code
@@ -164,7 +323,8 @@ extern "x86-interrupt" fn page_fault_handler(
     }
 
     println!("EXCEPTION: PAGE FAULT");
-    println!("Accessed Address: {:?}", Cr2::read());
+    let accessed_address = Cr2::read();
+    println!("Accessed Address: {:?}", accessed_address);
     println!("Error Code: {:?}", error_code);
     println!("{:#?}", stack_frame);
     panic!("Page fault");
@@ -222,6 +382,11 @@ extern "x86-interrupt" fn double_fault_handler(
 /// The interrupt handler which is called for the PIC timer interrupt
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
     KERNEL_STATE.increment_ticks();
+
+    if KERNEL_STATE.ticks() % 2 == 0 {
+        // Ignore result
+        let _ = flush();
+    }
 
     poll_tasks();
 
