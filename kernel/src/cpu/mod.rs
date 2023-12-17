@@ -168,7 +168,7 @@ impl PhysicalMemoryAccessor {
                 .start
                 .start_address()
                 .as_mut_ptr::<()>()
-                .byte_add(addr_usize & 4096)
+                .byte_add(addr_usize % 4096)
         };
 
         let v = f(ptr);
