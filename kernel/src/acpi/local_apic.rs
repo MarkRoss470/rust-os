@@ -317,7 +317,7 @@ impl LocalApicRegisters {
         unsafe {
             // Number chosen to get about 100 interrupts per second in qemu
             // TODO: calculate this number properly
-            self.write_reg(Self::INITIAL_COUNT_OFFSET, 100000);
+            self.write_reg(Self::INITIAL_COUNT_OFFSET, 25000);
         }
     }
 
