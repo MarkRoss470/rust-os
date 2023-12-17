@@ -215,3 +215,13 @@ pub unsafe fn send_debug_self_interrupt(vector: u8) {
 
     callback()
 }
+
+/// Gets the LAPIC ID of the core this function is called on
+pub fn current_apic_id() -> Option<u32> {
+    let lock = CURRENT_CONTROLLER.lock();
+    let InterruptController::LocalApic(ref lapic) = *lock else {
+        return None;
+    };
+
+    Some(lapic.lapic_id())
+}
