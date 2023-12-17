@@ -34,6 +34,7 @@ extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
 use bootloader_api::{info::MemoryRegions, BootInfo, BootloaderConfig};
+use cpu::interrupt_controllers::send_debug_self_interrupt;
 use log::Log;
 use x86_64::VirtAddr;
 
@@ -328,6 +329,8 @@ fn shell_loop() -> ! {
                                 },
                                 "clear" => clear(),
                                 "kinfo" => kinfo(&commands[1..]),
+                                // SAFETY: For debugging only, not sound
+                                "interrupt" => unsafe {debug_interrupt(&commands[1..])},
                                 _ => println!("Unknown command {c}"),
                             }
                         }
@@ -353,7 +356,45 @@ fn echo(args: &[&str]) {
 }
 
 /// Prints info about the kernel's state
-fn kinfo(_: &[&str]) {
-    println!("Kernel ticks: {}", KERNEL_STATE.ticks());
-    println!("Registered tasks: {}", num_tasks());
+fn kinfo(args: &[&str]) {
+    match args.first().copied() {
+        Some("schedule") => {
+            println!("Kernel ticks: {}", KERNEL_STATE.ticks());
+            println!("Registered tasks: {}", num_tasks());
+        }
+
+        Some("acpi") => {
+            let acpica = KERNEL_STATE.acpica.lock();
+
+            println!("MADT: {:?}", acpica.madt());
+            println!("FADT: {:?}", acpica.fadt());
+            println!("DSDT: {:?}", acpica.dsdt());
+            
+            if let Some(mcfg) = acpica.mcfg() {
+                println!("MCFG: {:?}", acpica.mcfg());
+                for record in mcfg.records() {
+                    println!("    Record: {record:?}");
+                }
+
+            }
+        }
+
+        Some(a) => {
+            println!("Unknown argument '{a}'");
+        }
+        None => println!("Provide argument for what to give info about"),
+    }
+}
+
+/// Sends an interrupt on the vector specified in the first argument
+unsafe fn debug_interrupt(args: &[&str]) {
+    match args.first().map(|n|n.parse()) {
+        Some(Ok(vector)) => {
+            // SAFETY: For debugging only, not sound
+            unsafe { send_debug_self_interrupt(vector) }
+        },
+        _ => {
+        println!("First argument must be interrupt vector");
+        }
+    };
 }
