@@ -15,7 +15,7 @@ use x86_64::{
 
 use crate::{
     cpu::{register_interrupt_callback, remove_interrupt_callback, CallbackRemoveError},
-    global_state::KERNEL_STATE,
+    global_state::{KernelState, KERNEL_STATE},
     graphics::flush,
     pci, print, println,
 };
@@ -90,22 +90,6 @@ pub unsafe fn init(rsdp_addr: u64) {
     flush();
 
     let acpica_initialization = acpica_initialization.initialize_objects().unwrap();
-
-    let _: Option<()> = acpica_initialization.scan_devices(|handle, _| {
-        let info = handle.get_info().unwrap();
-
-        debug!(
-            "{}: {:?} {:?} {:?} {:?}",
-            handle.path().unwrap(),
-            info.hardware_id(),
-            info.unique_id(),
-            info.class_code(),
-            crate::util::iterator_list_debug::IteratorListDebug::new(info.compatible_id_list())
-        );
-        None
-    });
-    flush();
-
     KERNEL_STATE.acpica.init(acpica_initialization);
 
     trace!(target: "acpi_init", "Done initialising ACPICA");
@@ -382,8 +366,9 @@ unsafe impl AcpiHandler for AcpiInterface {
 
     unsafe fn get_timer(&mut self) -> u64 {
         // TODO: actually implement a timer
-        trace!("Getting timer");
-        0x5000_0000_0000
+        let timer = KERNEL_STATE.ticks() as u64 * 100_000;
+        // trace!("Getting timer: {timer}");
+        timer
     }
 
     unsafe fn read_physical_u8(&mut self, address: AcpiPhysicalAddress) -> Result<u8, AcpiError> {

@@ -52,6 +52,7 @@ mod scheduler;
 #[cfg(test)]
 mod tests;
 pub mod util;
+mod devices;
 
 use global_state::*;
 use graphics::init_graphics;
@@ -262,6 +263,9 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
 
     // SAFETY: This function is only called once.
     unsafe { cpu::init_ps2() };
+
+    // SAFETY: This function is only called once.
+    unsafe { devices::init() };
 
     println!("Finished initialising kernel");
     flush();
