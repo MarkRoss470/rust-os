@@ -19,7 +19,7 @@ use crate::{
     println,
 };
 
-/// A type of interrupt controller that the CPU can recieve interrupts from
+/// A type of interrupt controller that the CPU can receive interrupts from
 enum InterruptController {
     /// No interrupt controller is set up
     None,

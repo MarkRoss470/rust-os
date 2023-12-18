@@ -99,7 +99,7 @@ pub enum Ps2PortTestFailureError {
 }
 
 impl Ps2PortTestFailureError {
-    /// Parses an error from the byte recieved from the port
+    /// Parses an error from the byte received from the port
     fn from_u8(value: u8) -> Self {
         match value {
             0 => Self::ClockLineStuckLow,
