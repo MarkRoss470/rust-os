@@ -1,10 +1,14 @@
+//! Code to interact with the IO APIC for receiving hardware interrupts
+
 use log::debug;
 use x86_64::{
-    structures::paging::{frame::PhysFrameRange, PhysFrame},
-    PhysAddr,
+    structures::paging::{frame::PhysFrameRange, page::PageRange, Page, PhysFrame},
+    PhysAddr, VirtAddr,
 };
 
 use crate::global_state::KERNEL_STATE;
+
+use super::{InterruptActiveState, InterruptTriggerMode};
 
 #[bitfield(u32)]
 struct IoApicId {
@@ -96,70 +100,14 @@ impl InterruptDeliveryMode {
     }
 }
 
-/// Whether an interrupt is edge- or level-triggered.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum InterruptTriggerMode {
-    /// The interrupt is sent once when the signal changes
-    EdgeTriggered,
-    /// The interrupt is sent repeatedly until the signal changes back
-    LevelTriggered,
-}
-
-impl InterruptTriggerMode {
-    /// Constructs an [`InterruptTriggerMode`] from its bit representation
-    const fn from_bits(bits: u64) -> Self {
-        match bits {
-            0 => Self::EdgeTriggered,
-            1 => Self::LevelTriggered,
-            _ => unreachable!(),
-        }
-    }
-
-    /// Converts an [`InterruptTriggerMode`] into its bit representation
-    const fn into_bits(self) -> u64 {
-        match self {
-            Self::EdgeTriggered => 0,
-            Self::LevelTriggered => 1,
-        }
-    }
-}
-
-/// Whether an interrupt is active high or low.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum InterruptActiveState {
-    /// The interrupt is sent when the signal is active
-    ActiveHigh,
-    /// The interrupt is sent when the signal is not active
-    ActiveLow,
-}
-
-impl InterruptActiveState {
-    /// Constructs an [`InterruptActiveState`] from its bit representation
-    const fn from_bits(bits: u64) -> Self {
-        match bits {
-            0 => Self::ActiveHigh,
-            1 => Self::ActiveLow,
-            _ => unreachable!(),
-        }
-    }
-
-    /// Converts an [`InterruptActiveState`] into its bit representation
-    const fn into_bits(self) -> u64 {
-        match self {
-            Self::ActiveHigh => 0,
-            Self::ActiveLow => 1,
-        }
-    }
-}
-
 /// Whether the local APIC is addressed physically by ID or logically
 /// by checking the Destination Format Register and Logical Destination Register in each Local APIC.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InterruptDestinationMode {
-    /// The interrupt is sent to the local APIC with the ID stored in the lower 4 bits of 
+    /// The interrupt is sent to the local APIC with the ID stored in the lower 4 bits of
     /// [`destination`][RedirectionEntry::destination]
     Physical,
-    /// The interrupt is sent to the local APIC(s) whose _Destination Format Register_ and 
+    /// The interrupt is sent to the local APIC(s) whose _Destination Format Register_ and
     /// _Logical Destination Register_ match [`destination`][RedirectionEntry::destination]
     Logical,
 }
@@ -219,25 +167,25 @@ struct RedirectionEntry {
     /// How to send the interrupt
     #[bits(3)]
     delivery_mode: InterruptDeliveryMode,
-    
+
     /// How to interpret [`destination`][RedirectionEntry::destination]
     #[bits(1)]
     destination_mode: InterruptDestinationMode,
-    
+
     /// The interrupt is pending to be sent
     will_be_sent: bool,
 
     /// Whether the interrupt is active high or low
-    #[bits(1)]
+    #[bits(1, from = InterruptActiveState::from_bits_u64, into = InterruptActiveState::into_bits_u64)]
     active_state: InterruptActiveState,
 
-    /// This field is only valid when [`trigger_mode`][RedirectionEntry::trigger_mode] 
+    /// This field is only valid when [`trigger_mode`][RedirectionEntry::trigger_mode]
     /// is [`LevelTriggered`][InterruptTriggerMode::LevelTriggered]
     #[bits(1)]
     level_triggered_state: LevelTriggeredInterruptState,
 
     /// Whether the interrupt is edge- or level-triggered.
-    #[bits(1)]
+    #[bits(1, from = InterruptTriggerMode::from_bits_u64, into = InterruptTriggerMode::into_bits_u64)]
     trigger_mode: InterruptTriggerMode,
 
     /// Whether the interrupt is masked. If this field is `true` then the interrupt won't be sent.
@@ -246,7 +194,7 @@ struct RedirectionEntry {
     #[bits(39)]
     _reserved: (),
 
-    /// Which local APICs to send the interrupt to. How these bits are interpreted depends on 
+    /// Which local APICs to send the interrupt to. How these bits are interpreted depends on
     /// [`destination_mode`][RedirectionEntry::destination_mode].
     destination: u8,
 }
@@ -257,11 +205,6 @@ struct RedirectionEntry {
 pub struct IoApicRegisters(*mut u32);
 
 impl IoApicRegisters {
-    /// The offset into the I/O APIC physical registers of the address register
-    const ADDRESS_REGISTER_OFFSET: usize = 0x00;
-    /// The offset into the I/O APIC physical registers of the data register
-    const DATA_REGISTER_OFFSET: usize = 0x10;
-
     /// Constructs a new [`IoApicRegisters`] struct for registers at the given physical address.
     ///
     /// # Safety
@@ -270,18 +213,49 @@ impl IoApicRegisters {
     pub unsafe fn new(ptr: PhysAddr) -> Self {
         debug!("Creating IoApicRegisters at {ptr:?}");
 
-        let start_frame = PhysFrame::containing_address(ptr);
+        let start = PhysFrame::containing_address(ptr);
+        let frames = PhysFrameRange {
+            start,
+            end: start + 2,
+        };
 
-        let virt_addr = KERNEL_STATE
-            .physical_memory_accessor
-            .lock()
-            .map_frames(PhysFrameRange {
-                start: start_frame,
-                end: start_frame + 2,
-            });
+        // SAFETY: This function can only be called once per APIC, so this MMIO is not being used by other code
+        let virt_addr = unsafe {
+            KERNEL_STATE
+                .physical_memory_accessor
+                .lock()
+                .map_frames(frames)
+        };
 
         Self(virt_addr.start.start_address().as_mut_ptr())
     }
+}
+
+impl Drop for IoApicRegisters {
+    fn drop(&mut self) {
+        let start = Page::containing_address(VirtAddr::from_ptr(self.0));
+
+        let pages = PageRange {
+            start,
+            end: start + 2,
+        };
+
+        // SAFETY: These are the pages which were mapped in `new`.
+        // This struct is about to be destroyed, so the pointer will not be used again.
+        unsafe {
+            KERNEL_STATE
+                .physical_memory_accessor
+                .lock()
+                .unmap_frames(pages);
+        }
+    }
+}
+
+impl IoApicRegisters {
+    /// The offset into the I/O APIC physical registers of the address register
+    const ADDRESS_REGISTER_OFFSET: usize = 0x00;
+    /// The offset into the I/O APIC physical registers of the data register
+    const DATA_REGISTER_OFFSET: usize = 0x10;
 
     /// Reads from a register. This method requires an `&mut self` parameter because
     /// reading a logical register requires writing to the physical address register, which is not thread safe.
@@ -340,7 +314,7 @@ impl IoApicRegisters {
     ) -> Result<(), ()> {
         debug!(target: "write_redirection_entry", "vector: {vector}, maximum redirection entry: {}", self.get_version().maximum_redirection_entry());
         assert!(vector <= self.get_version().maximum_redirection_entry());
-        
+
         let vector = vector as u32;
         let entry: u64 = entry.into();
 
@@ -362,11 +336,11 @@ impl IoApicRegisters {
 
     /// Sets the interrupt for the primary port of an
     /// [8042 PS/2 controller] (IRQ 1) to go to interrupt number `vector`.
-    /// 
-    /// # Safety 
+    ///
+    /// # Safety
     /// The `local_apic_id` must refer to a local APIC, and its associated core must be
-    /// set up to receive interrupts from this source. 
-    /// 
+    /// set up to receive interrupts from this source.
+    ///
     /// [8042 PS/2 controller]: crate::cpu::ps2::Ps2Controller8042
     pub unsafe fn set_ps2_primary_port_interrupt(
         &mut self,
@@ -389,11 +363,11 @@ impl IoApicRegisters {
 
     /// Sets the interrupt for the secondary port of an
     /// [8042 PS/2 controller] (IRQ 1) to go to interrupt number `vector`.
-    /// 
-    /// # Safety 
+    ///
+    /// # Safety
     /// The `local_apic_id` must refer to a local APIC, and its associated core must be
-    /// set up to receive interrupts from this source. 
-    /// 
+    /// set up to receive interrupts from this source.
+    ///
     /// [8042 PS/2 controller]: crate::cpu::ps2::Ps2Controller8042
     pub unsafe fn set_ps2_secondary_port_interrupt(
         &mut self,

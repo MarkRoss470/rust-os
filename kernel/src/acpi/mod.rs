@@ -20,10 +20,103 @@ use crate::{
     pci, print, println,
 };
 
+/// Whether an interrupt is active high or low.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InterruptActiveState {
+    /// The interrupt is sent when the signal is active
+    ActiveHigh,
+    /// The interrupt is sent when the signal is not active
+    ActiveLow,
+}
+
+impl InterruptActiveState {
+    /// Constructs an [`InterruptActiveState`] from its bit representation
+    const fn from_bits_u64(bits: u64) -> Self {
+        match bits {
+            0 => Self::ActiveHigh,
+            1 => Self::ActiveLow,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Converts an [`InterruptActiveState`] into its bit representation
+    const fn into_bits_u64(self) -> u64 {
+        match self {
+            Self::ActiveHigh => 0,
+            Self::ActiveLow => 1,
+        }
+    }
+
+    /// Constructs an [`InterruptActiveState`] from its bit representation
+    const fn from_bits_u32(bits: u32) -> Self {
+        match bits {
+            0 => Self::ActiveHigh,
+            1 => Self::ActiveLow,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Converts an [`InterruptActiveState`] into its bit representation
+    const fn into_bits_u32(self) -> u32 {
+        match self {
+            Self::ActiveHigh => 0,
+            Self::ActiveLow => 1,
+        }
+    }
+}
+
+/// Whether an interrupt is edge- or level-triggered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InterruptTriggerMode {
+    /// The interrupt is sent once when the signal changes
+    EdgeTriggered,
+    /// The interrupt is sent repeatedly until the signal changes back
+    LevelTriggered,
+}
+
+impl InterruptTriggerMode {
+    /// Constructs an [`InterruptTriggerMode`] from its bit representation
+    const fn from_bits_u64(bits: u64) -> Self {
+        match bits {
+            0 => Self::EdgeTriggered,
+            1 => Self::LevelTriggered,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Converts an [`InterruptTriggerMode`] into its bit representation
+    const fn into_bits_u64(self) -> u64 {
+        match self {
+            Self::EdgeTriggered => 0,
+            Self::LevelTriggered => 1,
+        }
+    }
+
+    /// Constructs an [`InterruptTriggerMode`] from its bit representation
+    const fn from_bits_u32(bits: u32) -> Self {
+        match bits {
+            0 => Self::EdgeTriggered,
+            1 => Self::LevelTriggered,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Converts an [`InterruptTriggerMode`] into its bit representation
+    const fn into_bits_u32(self) -> u32 {
+        match self {
+            Self::EdgeTriggered => 0,
+            Self::LevelTriggered => 1,
+        }
+    }
+}
+
+/// An error which can occur when powering the system off
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[must_use]
 pub enum PowerOffError {
+    /// ACPI returned an error
     Acpi(AcpiError),
+    /// ACPI returned no error, but the system is still on
     DidntTurnOff,
 }
 
@@ -62,12 +155,12 @@ pub unsafe fn power_off() -> Result<Infallible, PowerOffError> {
 /// * `rsdp_addr` must be the virtual address of the RSDP.
 pub unsafe fn init(rsdp_addr: u64) {
     trace!(target: "acpi_init", "Initialising ACPICA");
-    flush();
+    flush().unwrap();
 
     let acpica_initialization = register_interface(AcpiInterface { rsdp_addr }).unwrap();
 
     trace!(target: "acpi_init", "Initializing tables");
-    flush();
+    flush().unwrap();
 
     let acpica_initialization = acpica_initialization.initialize_tables().unwrap();
 
@@ -77,23 +170,23 @@ pub unsafe fn init(rsdp_addr: u64) {
     unsafe { pci::init(acpica_initialization.mcfg().unwrap()) }
 
     trace!(target: "acpi_init", "Loading tables");
-    flush();
+    flush().unwrap();
 
     let acpica_initialization = acpica_initialization.load_tables().unwrap();
 
     trace!(target: "acpi_init", "Enabling subsystem");
-    flush();
+    flush().unwrap();
 
     let acpica_initialization = acpica_initialization.enable_subsystem().unwrap();
 
     trace!(target: "acpi_init", "Initializing objects");
-    flush();
+    flush().unwrap();
 
     let acpica_initialization = acpica_initialization.initialize_objects().unwrap();
     KERNEL_STATE.acpica.init(acpica_initialization);
 
     trace!(target: "acpi_init", "Done initialising ACPICA");
-    flush();
+    flush().unwrap();
 }
 
 /// Prints out debug information about the parsed ACPI tables
@@ -154,7 +247,7 @@ macro_rules! write_physical {
                 .physical_memory_accessor
                 .lock()
                 .with_mapping(address, $size, |ptr| {
-                    let array: [u8; $size] = core::mem::transmute($value);
+                    let array: [u8; $size] = $value.to_ne_bytes();
                     core::ptr::write_volatile(ptr.cast(), array);
                 })
         };
@@ -432,14 +525,19 @@ unsafe impl AcpiHandler for AcpiInterface {
         id: acpica_bindings::types::AcpiPciId,
         register: usize,
     ) -> Result<u8, AcpiError> {
-        Ok(crate::pci::get_pci_ptr::<u8>(
-            id.segment,
-            id.bus.try_into().unwrap(),
-            id.device.try_into().unwrap(),
-            id.function.try_into().unwrap(),
-            register.try_into().unwrap(),
-        )
-        .read())
+        // SAFETY: The read is volatile
+        let v = unsafe {
+            crate::pci::get_pci_ptr::<u8>(
+                id.segment,
+                id.bus.try_into().unwrap(),
+                id.device.try_into().unwrap(),
+                id.function.try_into().unwrap(),
+                register.try_into().unwrap(),
+            )
+            .read_volatile()
+        };
+
+        Ok(v)
     }
 
     unsafe fn read_pci_config_u16(
@@ -447,14 +545,19 @@ unsafe impl AcpiHandler for AcpiInterface {
         id: acpica_bindings::types::AcpiPciId,
         register: usize,
     ) -> Result<u16, AcpiError> {
-        Ok(crate::pci::get_pci_ptr::<u16>(
-            id.segment,
-            id.bus.try_into().unwrap(),
-            id.device.try_into().unwrap(),
-            id.function.try_into().unwrap(),
-            register.try_into().unwrap(),
-        )
-        .read())
+        // SAFETY: The read is volatile
+        let v = unsafe {
+            crate::pci::get_pci_ptr::<u16>(
+                id.segment,
+                id.bus.try_into().unwrap(),
+                id.device.try_into().unwrap(),
+                id.function.try_into().unwrap(),
+                register.try_into().unwrap(),
+            )
+            .read_volatile()
+        };
+
+        Ok(v)
     }
 
     unsafe fn read_pci_config_u32(
@@ -462,14 +565,19 @@ unsafe impl AcpiHandler for AcpiInterface {
         id: acpica_bindings::types::AcpiPciId,
         register: usize,
     ) -> Result<u32, AcpiError> {
-        Ok(crate::pci::get_pci_ptr::<u32>(
-            id.segment,
-            id.bus.try_into().unwrap(),
-            id.device.try_into().unwrap(),
-            id.function.try_into().unwrap(),
-            register.try_into().unwrap(),
-        )
-        .read())
+        // SAFETY: The read is volatile
+        let v = unsafe {
+            crate::pci::get_pci_ptr::<u32>(
+                id.segment,
+                id.bus.try_into().unwrap(),
+                id.device.try_into().unwrap(),
+                id.function.try_into().unwrap(),
+                register.try_into().unwrap(),
+            )
+            .read_volatile()
+        };
+
+        Ok(v)
     }
 
     unsafe fn read_pci_config_u64(
@@ -477,14 +585,19 @@ unsafe impl AcpiHandler for AcpiInterface {
         id: acpica_bindings::types::AcpiPciId,
         register: usize,
     ) -> Result<u64, AcpiError> {
-        Ok(crate::pci::get_pci_ptr::<u64>(
-            id.segment,
-            id.bus.try_into().unwrap(),
-            id.device.try_into().unwrap(),
-            id.function.try_into().unwrap(),
-            register.try_into().unwrap(),
-        )
-        .read())
+        // SAFETY: The read is volatile
+        let v = unsafe {
+            crate::pci::get_pci_ptr::<u64>(
+                id.segment,
+                id.bus.try_into().unwrap(),
+                id.device.try_into().unwrap(),
+                id.function.try_into().unwrap(),
+                register.try_into().unwrap(),
+            )
+            .read_volatile()
+        };
+
+        Ok(v)
     }
 
     unsafe fn write_pci_config_u8(
@@ -493,14 +606,20 @@ unsafe impl AcpiHandler for AcpiInterface {
         register: usize,
         value: u8,
     ) -> Result<(), AcpiError> {
-        Ok(crate::pci::get_pci_ptr::<u8>(
-            id.segment,
-            id.bus.try_into().unwrap(),
-            id.device.try_into().unwrap(),
-            id.function.try_into().unwrap(),
-            register.try_into().unwrap(),
-        )
-        .write(value))
+        // SAFETY: The write is volatile.
+        // The write is instructed by ACPI, so it should be sound
+        unsafe {
+            crate::pci::get_pci_ptr::<u8>(
+                id.segment,
+                id.bus.try_into().unwrap(),
+                id.device.try_into().unwrap(),
+                id.function.try_into().unwrap(),
+                register.try_into().unwrap(),
+            )
+            .write_volatile(value)
+        };
+
+        Ok(())
     }
 
     unsafe fn write_pci_config_u16(
@@ -509,14 +628,20 @@ unsafe impl AcpiHandler for AcpiInterface {
         register: usize,
         value: u16,
     ) -> Result<(), AcpiError> {
-        Ok(crate::pci::get_pci_ptr::<u16>(
-            id.segment,
-            id.bus.try_into().unwrap(),
-            id.device.try_into().unwrap(),
-            id.function.try_into().unwrap(),
-            register.try_into().unwrap(),
-        )
-        .write(value))
+        // SAFETY: The write is volatile.
+        // The write is instructed by ACPI, so it should be sound
+        unsafe {
+            crate::pci::get_pci_ptr::<u16>(
+                id.segment,
+                id.bus.try_into().unwrap(),
+                id.device.try_into().unwrap(),
+                id.function.try_into().unwrap(),
+                register.try_into().unwrap(),
+            )
+            .write_volatile(value)
+        };
+
+        Ok(())
     }
 
     unsafe fn write_pci_config_u32(
@@ -525,14 +650,20 @@ unsafe impl AcpiHandler for AcpiInterface {
         register: usize,
         value: u32,
     ) -> Result<(), AcpiError> {
-        Ok(crate::pci::get_pci_ptr::<u32>(
-            id.segment,
-            id.bus.try_into().unwrap(),
-            id.device.try_into().unwrap(),
-            id.function.try_into().unwrap(),
-            register.try_into().unwrap(),
-        )
-        .write(value))
+        // SAFETY: The write is volatile.
+        // The write is instructed by ACPI, so it should be sound
+        unsafe {
+            crate::pci::get_pci_ptr::<u32>(
+                id.segment,
+                id.bus.try_into().unwrap(),
+                id.device.try_into().unwrap(),
+                id.function.try_into().unwrap(),
+                register.try_into().unwrap(),
+            )
+            .write_volatile(value)
+        };
+
+        Ok(())
     }
 
     unsafe fn write_pci_config_u64(
@@ -541,14 +672,20 @@ unsafe impl AcpiHandler for AcpiInterface {
         register: usize,
         value: u64,
     ) -> Result<(), AcpiError> {
-        Ok(crate::pci::get_pci_ptr::<u64>(
-            id.segment,
-            id.bus.try_into().unwrap(),
-            id.device.try_into().unwrap(),
-            id.function.try_into().unwrap(),
-            register.try_into().unwrap(),
-        )
-        .write(value))
+        // SAFETY: The write is volatile.
+        // The write is instructed by ACPI, so it should be sound
+        unsafe {
+            crate::pci::get_pci_ptr::<u64>(
+                id.segment,
+                id.bus.try_into().unwrap(),
+                id.device.try_into().unwrap(),
+                id.function.try_into().unwrap(),
+                register.try_into().unwrap(),
+            )
+            .write_volatile(value)
+        };
+
+        Ok(())
     }
 
     unsafe fn signal_fatal(
