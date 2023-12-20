@@ -5,15 +5,10 @@ use core::{fmt::Debug, sync::atomic::AtomicU64};
 use log::debug;
 use pic8259::ChainedPics;
 use spin::Mutex;
-use x86_64::{
-    instructions::interrupts::without_interrupts,
-    structures::paging::{frame::PhysFrameRange, PhysFrame},
-};
+use x86_64::instructions::interrupts::without_interrupts;
 
 use crate::{
-    acpi::{
-        local_apic::{self, LocalApicRegisters}, io_apic::IoApicRegisters,
-    },
+    acpi::{io_apic::IoApicRegisters, local_apic::LocalApicRegisters},
     cpu::idt::InterruptIndex,
     global_state::KERNEL_STATE,
     println,
