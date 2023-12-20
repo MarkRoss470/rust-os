@@ -27,6 +27,7 @@ use self::runtime_registers::RuntimeRegisters;
 pub mod capability_registers;
 pub mod operational_registers;
 pub mod runtime_registers;
+mod trb;
 
 /// A specific xHCI USB controller connected to the system by PCI.
 #[derive(Debug)]
