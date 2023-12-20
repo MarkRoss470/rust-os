@@ -70,7 +70,7 @@ pub struct UsbCommand {
     /// Whether the device will produce host system interrupts (i.e. CPU interrupts) on USB events.
     pub interrupts_enabled: bool,
 
-    /// Whether the controller asserts out-of-band error signalling to the host. The signaling is acknowledged
+    /// Whether the controller asserts out-of-band error signalling to the host. The signalling is acknowledged
     /// by software clearing the HSE bit.
     ///
     /// See the spec section [4.10.2.6] for more information.

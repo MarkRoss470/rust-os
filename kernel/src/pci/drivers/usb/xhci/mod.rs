@@ -5,13 +5,14 @@
 // TODO: actually fix these warnings instead of ignoring them
 #![allow(dead_code)]
 
-use core::future::Pending;
-
 use crate::{
     global_state::KERNEL_STATE,
     pci::{
-        classcodes::ClassCode, devices::PciFunction,
-        drivers::usb::xhci::operational_registers::OperationalRegisters, registers::HeaderType,
+        bar::Bar,
+        classcodes::ClassCode,
+        devices::PciFunction,
+        drivers::usb::xhci::operational_registers::OperationalRegisters,
+        registers::{HeaderType, PciGeneralDeviceHeader},
         PciMappedFunction,
     },
     println,
@@ -20,7 +21,8 @@ use crate::{
 use crate::pci::classcodes::{SerialBusControllerType, USBControllerType};
 
 use capability_registers::CapabilityRegisters;
-use spin::Mutex;
+use log::debug;
+use x86_64::VirtAddr;
 
 use self::runtime_registers::RuntimeRegisters;
 
@@ -49,43 +51,76 @@ impl XhciController {
     /// This function may only be called once per xHCI controller
     ///
     /// [4.2]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A87%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C374%2C0%5D
-    pub async unsafe fn init(function: PciMappedFunction) {
-        println!("{}: Reading header", function.function);
+    pub async unsafe fn init(mut function: PciMappedFunction) {
+        let general_device_header = parse_header(&function);
 
-        let header = function.read_header().unwrap().unwrap();
-        let HeaderType::GeneralDevice(general_device_header) = header.header_type else {
-            panic!()
-        };
+        // SAFETY: This function is only called once per controller.
+        // No `Bar`s exist at this point in the function.
+        let mapped_mmio = unsafe { map_mmio(general_device_header, &function) };
 
-        assert_eq!(
-            header.class_code,
-            ClassCode::SerialBusController(SerialBusControllerType::UsbController(
-                USBControllerType::Xhci
-            ))
+        // SAFETY: mapped_mmio is the mapped MMIO.
+        // This function is only called once per controller.
+        let mut controller = unsafe { Self::find_registers(mapped_mmio, &function) };
+
+        println!("{}: Sending Host Controller Reset", function.function);
+        
+        // SAFETY: The controller hasn't been set up yet so nothing is relying on the state being preserved
+        unsafe {
+            controller.reset_and_wait().await;
+        }
+
+        controller.enable_all_ports();
+
+        // TODO: Program the Device Context Base Address Array Pointer (DCBAAP)
+        // register (5.4.6) with a 64-bit address pointing to where the Device
+        // Context Base Address Array is located.
+
+        // TODO: Define the Command Ring Dequeue Pointer by programming the
+        // Command Ring Control Register (5.4.5) with a 64-bit address pointing to
+        // the starting address of the first TRB of the Command Ring
+
+        // SAFETY: This function is only called once per controller.
+        // No `Bar`s exist at this point in the function.
+        unsafe {
+            init_msi(&mut function);
+        }
+
+        assert!(controller
+            .operational_registers
+            .read_usb_status()
+            .host_controller_halted());
+
+        controller.operational_registers.write_usb_command(
+            controller
+                .operational_registers
+                .read_usb_command()
+                .with_interrupts_enabled(true)
+                .with_enabled(true),
         );
 
-        println!("{}: Getting BAR", function.function);
+        loop {
+            for _ in 0..200 {
+                futures::pending!();
+            }
 
-        // SAFETY: XHCI controllers are guaranteed to have a BAR in BAR slot 0
-        let bar = unsafe { general_device_header.bar(&function, 0) };
+            println!(
+                "{}: Number of attached devices: {}",
+                function.function,
+                controller
+                    .operational_registers
+                    .ports()
+                    .filter(|port| port.read_status_and_control().device_connected())
+                    .count()
+            );
+        }
+    }
 
-        bar.debug();
-
-        println!("{}: Allocating BAR", function.function);
-
-        // SAFETY: as this function is only allowed to be called once, no other code can have seen this BAR yet
-        let mmio = bar.get_frames();
-
-        // SAFETY: The physical address is not used by other code as this function is only called once per controller
-        let mapped_mmio = unsafe {
-            KERNEL_STATE
-                .physical_memory_accessor
-                .lock()
-                .map_frames(mmio)
-                .start
-                .start_address()
-        };
-
+    /// Locates the different register types in the given MMIO region and constructs an [`XhciController`] struct from them.
+    ///
+    /// # Safety
+    /// * `mapped_mmio` must be the MMIO mapping for the first bar of the XHCI controller at `function`
+    /// * This function may only be called once per controller
+    unsafe fn find_registers(mapped_mmio: VirtAddr, function: &PciMappedFunction) -> Self {
         // SAFETY: The XHCI capability registers struct is guaranteed to be at this location in memory.
         let capability_registers = unsafe { CapabilityRegisters::new(mapped_mmio) };
 
@@ -103,49 +138,12 @@ impl XhciController {
             RuntimeRegisters::new(ptr)
         };
 
-        let mut controller = Self {
+        Self {
             function: function.function,
             capability_registers,
             operational_registers,
             runtime_registers,
-        };
-
-        println!("{}: Sending Host Controller Reset", function.function);
-        // SAFETY: The controller hasn't been set up yet so nothing is relying on the state being preserved
-        unsafe {
-            controller.reset_and_wait().await;
         }
-
-        controller.enable_all_ports();
-
-        println!(
-            "{}: Number of attached devices: {}",
-            function.function,
-            controller
-                .operational_registers
-                .ports()
-                .filter(|port| port.read_status_and_control().device_connected())
-                .count()
-        );
-
-        // let mut i = 0;
-
-        // loop {
-        //     futures::pending!();
-
-        //     i += 1;
-
-        //     if i % 20 == 0 {
-        //         println!(
-        //             "{function}: Number of attached devices: {}",
-        //             controller
-        //                 .operational_registers
-        //                 .ports()
-        //                 .filter(|port| port.read_status_and_control().device_connected())
-        //                 .count()
-        //         );
-        //     }
-        // }
     }
 
     /// Writes `true` to [`UsbCommand::reset`][operational_registers::UsbCommand::reset],
@@ -183,6 +181,82 @@ impl XhciController {
         self.operational_registers
             .write_configure(configure_register);
     }
+}
+
+/// Maps the MMIO range in an XHCI controller's first BAR
+///
+/// # Safety
+/// * This function may only be called once per controller
+/// * No [`Bar`] struct may exist for the device's first BAR while this function is called
+unsafe fn map_mmio(
+    general_device_header: PciGeneralDeviceHeader,
+    function: &PciMappedFunction,
+) -> VirtAddr {
+    // SAFETY: XHCI controllers are guaranteed to have a BAR in BAR slot 0
+    // No other `Bar` exists.
+    let bar = unsafe { general_device_header.bar(function, 0) };
+
+    bar.debug();
+
+    let mmio = bar.get_frames();
+
+    // SAFETY: The physical address is not used by other code as this function is only called once per controller
+    let mapped_mmio = unsafe {
+        KERNEL_STATE
+            .physical_memory_accessor
+            .lock()
+            .map_frames(mmio)
+            .start
+            .start_address()
+    };
+
+    mapped_mmio
+}
+
+/// Initialises MSI or MSI-X for an XHCI controller
+///
+/// # Safety
+/// * This function must only be called once per controller
+/// * No [`Bar`] struct may exist for the device while this function is called
+unsafe fn init_msi(function: &mut PciMappedFunction) {
+    let registers = function.registers.clone();
+    let mut b = None;
+
+    // SAFETY: The passed closure returns the correct BAR.
+    unsafe {
+        function
+            .setup_msi(|i| {
+                b = Some(Bar::new_from_bar_number(&registers, i));
+                b.as_mut().unwrap()
+            })
+            .unwrap();
+    }
+}
+
+/// Reads the header of the controller.
+///
+/// This function also sanity checks that the device is actually an XHCI controller.
+fn parse_header(function: &PciMappedFunction) -> PciGeneralDeviceHeader {
+    debug!(
+        "PCIe registers are at physical address {:?}",
+        function.registers.phys_frame
+    );
+    debug!("{}: Reading header", function.function);
+
+    let header = function.read_header().unwrap().unwrap();
+    let HeaderType::GeneralDevice(general_device_header) = header.header_type else {
+        panic!("Device is not an XHCI controller")
+    };
+
+    assert_eq!(
+        header.class_code,
+        ClassCode::SerialBusController(SerialBusControllerType::UsbController(
+            USBControllerType::Xhci
+        )),
+        "Device is not an XHCI controller"
+    );
+
+    general_device_header
 }
 
 /// Defines a safe, public getter method for a type which contains a pointer to another type,

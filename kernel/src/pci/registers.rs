@@ -243,15 +243,16 @@ impl PciGeneralDeviceHeader {
     /// If `bar_number` is greater than 5, as this would be past the end of the devices list of BARs.
     ///
     /// # Safety
-    /// `bar_number` must be the offset of a BAR which really exists,
-    /// and must not point to the second half of a 64-bit BAR.
-    /// This can be verified by checking [`class_code`][PciHeader::class_code].
+    /// * `bar_number` must be the offset of a BAR which really exists,
+    ///     and must not point to the second half of a 64-bit BAR.
+    ///     This can be verified by checking [`class_code`][PciHeader::class_code].
+    /// * No other [`Bar`] struct may exist for this BAR.
     pub unsafe fn bar<'a>(&self, function: &'a PciMappedFunction, bar_number: u8) -> Bar<'a> {
         if bar_number > 5 {
             panic!("bar_number too high");
         }
 
-        // SAFETY: the caller guarantees that this register really is a BAR
+        // SAFETY: the caller guarantees that this register really is a BAR, and no other `Bar` exists
         unsafe { Bar::new(&function.registers, 4 + bar_number) }
     }
 }
