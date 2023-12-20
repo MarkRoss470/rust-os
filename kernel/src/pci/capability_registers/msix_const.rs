@@ -19,14 +19,14 @@ pub struct MsixCapability<'a> {
 
     /// The BAR number where the table of interrupt vectors is
     bir: u8,
-    /// The index into the BAR indicated by [`bir`][MsixCapabilityMut::bir] where the table of interrupts vectors is.
+    /// The index into the BAR indicated by [`bir`][MsixCapability::bir] where the table of interrupts vectors is.
     table_offset: u32,
     /// The BAR number where the _Pending Bit Array_ is stored.
     /// This is a bit-array indicating which of a device's interrupts is currently pending response from the CPU.
     /// If the OS has allocated the same interrupt vector to multiple interrupts on a device, or across devices,
     /// this can be checked to see which interrupt was sent.
     pba_bir: u8,
-    /// The index into the BAR indicated by [`pba_bir`][MsixCapabilityMut::pba_bir] where the _Pending Bit Array_ is.
+    /// The index into the BAR indicated by [`pba_bir`][MsixCapability::pba_bir] where the _Pending Bit Array_ is.
     pba_offset: u32,
 
     /// Phantom data for borrow checking
@@ -85,16 +85,22 @@ impl<'a> MsixCapability<'a> {
 
     /// Gets the BAR and byte offset where the interrupt table is.
     ///
-    /// The BAR number (not register number) is returned rather than a [`Bar`] struct because the BAR may be shared with other data,
-    /// for which another [`Bar`] struct may exist already. For this reason,
+    /// The BAR may be shared with other data, for which another [`Bar`] struct may exist already. 
+    /// It's unsound for two [`Bar`]s to exist for the same BAR at once, 
+    /// so the BAR number (not register number) is returned rather than a [`Bar`].
+    /// 
+    /// [`Bar`]: crate::pci::bar::Bar
     pub fn interrupt_table(&self) -> (u8, u32) {
         (self.bir, self.table_offset)
     }
 
     /// Gets the BAR and byte offset where the interrupt table is.
     ///
-    /// The BAR number (not register number) is returned rather than a [`Bar`] struct because the BAR may be shared with other data,
-    /// for which another [`Bar`] struct may exist already. For this reason,
+    /// The BAR may be shared with other data, for which another [`Bar`] struct may exist already. 
+    /// It's unsound for two [`Bar`]s to exist for the same BAR at once, 
+    /// so the BAR number (not register number) is returned rather than a [`Bar`].
+    /// 
+    /// [`Bar`]: crate::pci::bar::Bar
     pub fn pending_bits(&self) -> (u8, u32) {
         (self.pba_bir, self.pba_offset)
     }

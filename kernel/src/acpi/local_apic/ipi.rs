@@ -16,20 +16,14 @@ pub enum DeliveryMode {
     /// Deliver the signal to the agent that is executing at the lowest priority of all
     /// agents listed in the destination field. The trigger mode can be edge or level.
     LowestPriority,
-    /// The delivery mode is edge only. For systems that rely on SMI semantics, the [`vector`]` field is ignored
+    /// The delivery mode is edge only. For systems that rely on SMI semantics, the vector field is ignored
     /// but must be programmed to all zeroes for future compatibility.
-    ///
-    /// [`vector`]: X64MsiAddress::vector
     SystemManagementInterrupt,
-    /// Deliver the signal to all the agents listed in the destination field. [`vector`] is ignored.
+    /// Deliver the signal to all the agents listed in the destination field. The vector field is ignored.
     /// NMI is an edge triggered interrupt regardless of the Trigger Mode Setting.
-    ///
-    /// [`vector`]: X64MsiAddress::vector
     NonMaskableInterrupt,
-    /// Deliver this signal to all the agents listed in the destination field. [`vector`] is ignored.
+    /// Deliver this signal to all the agents listed in the destination field. The vector field is ignored.
     /// INIT is an edge triggered interrupt regardless of the Trigger Mode Setting.
-    ///
-    /// [`vector`]: X64MsiAddress::vector
     Init,
     /// Sends a special “start-up” IPI (called a SIPI) to the target processor or processors.
     /// The vector typically points to a start-up routine that is part of the BIOS boot-strap code.

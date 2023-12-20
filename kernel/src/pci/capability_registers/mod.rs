@@ -65,7 +65,7 @@ pub enum X64MsiDeliveryMode {
     /// Deliver the signal to the agent that is executing at the lowest priority of all
     /// agents listed in the destination field. The trigger mode can be edge or level.
     LowestPriority = 1,
-    /// The delivery mode is edge only. For systems that rely on SMI semantics, the [`vector`]` field is ignored
+    /// The delivery mode is edge only. For systems that rely on SMI semantics, the [`vector`] field is ignored
     /// but must be programmed to all zeroes for future compatibility.
     ///
     /// [`vector`]: X64MsiAddress::vector
@@ -123,6 +123,8 @@ pub struct X64MsiAddress {
     /// In logical mode, [`apic_id`] is a message destination address which then gets mapped to an APIC ID.
     ///
     /// TODO: look into this - I think it's only needed for virtualisation or for systems with more than 255 cores.
+    /// 
+    /// [`apic_id`]: X64MsiAddress::apic_id
     pub destination_is_logical: bool,
 
     /// The delivery mode

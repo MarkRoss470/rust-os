@@ -4,9 +4,7 @@ mod font_const;
 mod framebuffer;
 
 use crate::global_state::{GlobalState, TryLockedIfInitError};
-use alloc::vec;
-use alloc::vec::Vec;
-use bootloader_api::info::{FrameBuffer, FrameBufferInfo, PixelFormat};
+use bootloader_api::info::{FrameBuffer, PixelFormat};
 use core::fmt;
 use spin::Mutex;
 
@@ -71,6 +69,7 @@ pub struct Writer {
     buffer: FrameBufferController,
 }
 
+/// How many lines to scroll at a time
 const SCROLL_LINES: usize = 10;
 
 impl Writer {
@@ -126,13 +125,18 @@ impl fmt::Write for Writer {
     }
 }
 
-/// The global [`Writer`] used by [`print!`][crate::print!] and [`println!`][crate::println!]
+/// The global [`Writer`] used by [`print!`] and [`println!`]
+///
+/// [`print!`]: crate::print!
+/// [`println!`]: crate::println!
 pub static WRITER: GlobalState<Writer> = GlobalState::new();
 
 /// An error which can occur when trying to write to the screen
 #[derive(Debug, Clone, Copy)]
 enum WriteError {
     /// The formatter passed to [`print!`] called [`print!`], leading to the inner call being unable to succeed.
+    ///
+    /// [`print!`]: crate::print!
     Reentrancy,
 }
 
@@ -160,6 +164,7 @@ pub fn init_graphics(framebuffer: &'static mut FrameBuffer) {
     });
 }
 
+/// Flushes [`WRITER`]
 pub fn flush() -> Result<(), ()> {
     let mut writer = WRITER.try_lock().ok_or(())?;
 

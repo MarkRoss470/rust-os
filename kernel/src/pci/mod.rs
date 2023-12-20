@@ -227,14 +227,14 @@ impl PciMappedFunction {
 }
 
 impl PciDeviceCache {
-    /// Gets the [`PciFunctionCache`] for the given function, if present.
+    /// Gets the [`PciMappedFunction`] for the given function, if present.
     fn get_function(&self, function: u8) -> Option<&PciMappedFunction> {
         self.functions
             .iter()
             .find(|function_cache| function_cache.function.get_function_number() == function)
     }
 
-    /// Gets the [`PciFunctionCache`] for the given function, if present.
+    /// Gets the [`PciMappedFunction`] for the given function, if present.
     fn get_function_mut(&mut self, function: u8) -> Option<&mut PciMappedFunction> {
         self.functions
             .iter_mut()

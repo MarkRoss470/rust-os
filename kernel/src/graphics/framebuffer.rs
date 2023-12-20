@@ -1,3 +1,5 @@
+//! The [`FrameBufferController`] type
+
 use alloc::vec;
 use alloc::vec::Vec;
 use bootloader_api::info::{FrameBuffer, FrameBufferInfo};
@@ -13,7 +15,11 @@ pub struct FrameBufferController {
     /// The front buffer. Writing to this buffer will show pixels on the screen
     front_buffer: &'static mut [u8],
 
+    /// The index of the first byte in the array which has changed.
+    /// This is used to avoid rewriting the whole screen when only a small part has changed
     changed_start: usize,
+    /// The index of the last byte in the array which has changed.
+    /// This is used to avoid rewriting the whole screen when only a small part has changed
     changed_end: usize,
 }
 
@@ -73,6 +79,10 @@ impl FrameBufferController {
         self.changed_end = self.info.byte_len;
     }
 
+    /// Draws an 8x8 pixel bitmap into the buffer with the top-left corner at (`start_x`, `start_y`).
+    /// 
+    /// Each row of the bitmap is one byte in the input array, and one pixel is one bit within the byte
+    /// (LSB = left, MSB = right, 1 = `front`, 0 = `back`).
     #[inline]
     pub fn draw_packed_bitmap(
         &mut self,
@@ -120,7 +130,7 @@ impl FrameBufferController {
 
         let write_start = (y * self.info.stride + x) * self.info.bytes_per_pixel;
         let write_end = ((y + height) * self.info.stride + (x + width)) * self.info.bytes_per_pixel;
-        
+
         self.changed_start = write_start.min(write_start);
         self.changed_end = write_end.max(write_end);
 

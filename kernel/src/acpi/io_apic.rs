@@ -305,8 +305,10 @@ impl IoApicRegisters {
     /// # Safety
     /// The `entry` must be valid and the core it points to must be set up to receive the interrupts.
     ///
-    /// TODO: Take [`IoApicInterruptSourceOverride`][super::madt::MadtRecord::IoApicInterruptSourceOverride]s
+    /// TODO: Take [`IoApicInterruptSourceOverride`]s
     /// into account when making this mapping
+    /// 
+    /// [`IoApicInterruptSourceOverride`]: acpica_bindings::types::tables::madt::MadtRecord::IoApicInterruptSourceOverride
     unsafe fn write_redirection_entry(
         &mut self,
         vector: u8,

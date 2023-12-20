@@ -101,27 +101,6 @@ impl PciRegister {
         })
     }
 
-    /// Gets the address that needs to be written to the [`CONFIG_ADDRESS`] port to select this register.
-    const fn get_address(&self) -> u32 {
-        // Sanity check that the address is valid
-        // Check that `device`, `function`, and `offset` have valid values before calculating the address
-        if self.device & 0b11100000 != 0 {
-            panic!("Invalid address");
-        }
-        if self.function & 0b11111000 != 0 {
-            panic!("Invalid address");
-        }
-        if self.offset & 0b00000011 != 0 {
-            panic!("Invalid address");
-        }
-
-        (1 << 31) // Set the `enable` bit
-        | ((self.bus as u32) << 16)
-        | ((self.device as u32) << 11)
-        | ((self.function as u32) << 8)
-        | (self.offset as u32)
-    }
-
     /// Gets the next register - i.e. the same as this but with [`offset`][PciRegister::offset] 4 bytes greater
     ///
     /// Returns [`None`] if this register is the PCI device's last register

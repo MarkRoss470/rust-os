@@ -95,16 +95,22 @@ impl<'a> MsixCapabilityMut<'a> {
 
     /// Gets the BAR and byte offset where the interrupt table is.
     ///
-    /// The BAR number (not register number) is returned rather than a [`Bar`] struct because the BAR may be shared with other data,
-    /// for which another [`Bar`] struct may exist already. For this reason,
+    /// The BAR may be shared with other data, for which another [`Bar`] struct may exist already. 
+    /// It's unsound for two [`Bar`]s to exist for the same BAR at once, 
+    /// so the BAR number (not register number) is returned rather than a [`Bar`].
+    /// 
+    /// [`Bar`]: crate::pci::bar::Bar
     pub fn interrupt_table(&self) -> (u8, u32) {
         (self.bir, self.table_offset)
     }
 
     /// Gets the BAR and byte offset where the interrupt table is.
     ///
-    /// The BAR number (not register number) is returned rather than a [`Bar`] struct because the BAR may be shared with other data,
-    /// for which another [`Bar`] struct may exist already. For this reason,
+    /// The BAR may be shared with other data, for which another [`Bar`] struct may exist already. 
+    /// It's unsound for two [`Bar`]s to exist for the same BAR at once, 
+    /// so the BAR number (not register number) is returned rather than a [`Bar`].
+    /// 
+    /// [`Bar`]: crate::pci::bar::Bar
     pub fn pending_bits(&self) -> (u8, u32) {
         (self.pba_bir, self.pba_offset)
     }
