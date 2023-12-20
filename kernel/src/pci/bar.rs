@@ -7,7 +7,7 @@ use x86_64::{
     PhysAddr,
 };
 
-use super::{devices::PciRegister, PciMappedFunction, PcieController};
+use super::PcieMappedRegisters;
 use crate::println;
 
 /// The address of a region in memory used by the PCI device
@@ -17,6 +17,22 @@ pub enum MemorySpaceBarBaseAddress {
     Small(u32),
     /// A 64-bit base address
     Large(u64),
+}
+
+impl From<MemorySpaceBarBaseAddress> for PhysAddr {
+    fn from(val: MemorySpaceBarBaseAddress) -> Self {
+        val.as_address()
+    }
+}
+
+impl MemorySpaceBarBaseAddress {
+    /// Converts the address into a [`PhysAddr`]
+    pub fn as_address(self) -> PhysAddr {
+        match self {
+            MemorySpaceBarBaseAddress::Small(s) => PhysAddr::new(s as _),
+            MemorySpaceBarBaseAddress::Large(l) => PhysAddr::new(l),
+        }
+    }
 }
 
 impl Debug for MemorySpaceBarBaseAddress {
@@ -57,20 +73,52 @@ pub enum BarValue {
 }
 
 /// A specific base address register of a PCI device
+#[derive(Debug)]
 pub struct Bar<'a> {
-    function: &'a PciMappedFunction,
-    /// The register which this BAR is in
+    /// The function which this BAR is in
+    function: &'a PcieMappedRegisters,
+    /// The register which this BAR is in.
+    /// If the bar is 64-bit, this is the register with the lower index.
     register: u8,
 }
 
 impl<'a> Bar<'a> {
+    /// Constructs a BAR in the register space of the given PCI device.
+    /// The given `register` is the register index, not the BAR number
+    /// (e.g. a `register` value of 0 would mean the BAR is at the very start of the address space).
+    /// To construct a BAR from a BAR number instead, use [`new_from_bar_number`].
+    ///
     /// # Safety
     /// * The passed `register` must be part of a BAR. If the BAR is 64-bit,
     ///     it must be the register with the lower offset.
-    /// * Only one [`Bar`] struct may exist for each BAR at one time. 
+    /// * Only one [`Bar`] struct may exist for each BAR at one time.
     ///     No other code may access the BAR while this struct exists.
-    pub unsafe fn new(function: &'a PciMappedFunction, register: u8) -> Self {
-        Self { function, register }
+    ///
+    /// [`new_from_bar_number`]: Self::new_from_bar_number
+    pub unsafe fn new(registers: &'a PcieMappedRegisters, register: u8) -> Self {
+        Self {
+            function: registers,
+            register,
+        }
+    }
+
+    /// Constructs a BAR in the register space of the given PCI device.
+    /// The given `bar_number` is the BAR number for a regular PCI device (header type 0).
+    ///
+    /// # Safety
+    /// * `function` must have at least `bar_number + 1` BARs.
+    ///     Normal PCI devices (header type 0) have 6, while PCI-to-PCI bridge devices (header type 1) have 2.
+    /// * If the BAR at `bar_number` is 64-bit, `bar_number` must point to the register with the lower offset.
+    /// * Only one [`Bar`] struct may exist for each BAR at one time.
+    ///     No other code may access the BAR while this struct exists.
+    pub unsafe fn new_from_bar_number(registers: &'a PcieMappedRegisters, bar_number: u8) -> Self {
+        debug_assert!(bar_number <= 5);
+
+        // SAFETY:
+        // * The device has enough BARs, so the register number is valid
+        // * If the BAR is 64-bit, this is the lower half
+        // * No other `Bar` exists
+        unsafe { Self::new(registers, bar_number + 4) }
     }
 
     /// Reads the value of the BAR
@@ -111,6 +159,8 @@ impl<'a> Bar<'a> {
 
     /// Gets the size of the BAR
     pub fn get_size(&self) -> u64 {
+        /// The register offset of the status and command registers.
+        /// The command register is used to turn off memory and IO accesses while calculating the size of the BAR.
         const STATUS_AND_COMMAND_REGISTER: u8 = 1;
 
         // Disable both IO space and memory space accesses while performing all 1s write
@@ -146,7 +196,7 @@ impl<'a> Bar<'a> {
 
         // Only the writes to the top bits will have succeeded, so doing a bitwise not will make this only the lower bits.
         // Then adding one will give back the power of 2 size of the BAR
-        (!masked_address + 1).try_into().unwrap()
+        (!masked_address + 1).into()
     }
 
     /// Writes a 32 bit value to the base address of this BAR.

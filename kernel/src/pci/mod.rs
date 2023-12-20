@@ -1,15 +1,18 @@
 //! Functionality for reading and driving the PCI bus
 
 mod bar;
+mod capability_registers;
 mod classcodes;
 mod devices;
 mod drivers;
+mod msi;
 mod registers;
 
 use acpica_bindings::types::tables::mcfg::Mcfg;
 use alloc::sync::Arc;
 use alloc::{collections::VecDeque, vec::Vec};
 use core::mem::size_of;
+use log::debug;
 use x86_64::structures::paging::frame::PhysFrameRange;
 use x86_64::structures::paging::page::PageRange;
 use x86_64::structures::paging::{Page, PhysFrame};
@@ -17,7 +20,7 @@ use x86_64::PhysAddr;
 
 use crate::global_state::KERNEL_STATE;
 use crate::print;
-use crate::scheduler::{num_tasks, Task};
+use crate::scheduler::Task;
 use crate::{global_state::GlobalState, println};
 use devices::*;
 use registers::HeaderType;
@@ -33,6 +36,8 @@ use self::registers::PciDeviceId;
 pub struct PcieMappedRegisters {
     /// The page where the function's config registers are mapped
     page: Page,
+    /// The physical address of the registers
+    phys_frame: PhysFrame,
 }
 
 impl PcieMappedRegisters {
@@ -52,7 +57,10 @@ impl PcieMappedRegisters {
                 })
         };
 
-        Self { page: pages.start }
+        Self {
+            page: pages.start,
+            phys_frame,
+        }
     }
 
     /// Gets a pointer to the start of the configuration space
@@ -63,6 +71,51 @@ impl PcieMappedRegisters {
     /// Gets a mutable pointer to the start of the configuration space
     unsafe fn as_mut_ptr<T>(&self) -> *mut T {
         self.page.start_address().as_mut_ptr()
+    }
+
+    /// Reads the register at the given offset into the configuration space.
+    /// `register` is in registers, i.e. 4-byte multiples, **not** in bytes.
+    ///
+    /// # Safety
+    /// * The caller is responsible for managing any side effects this read may have.
+    unsafe fn read_reg(&self, register: u8) -> u32 {
+        // SAFETY: Side-effects are the caller's responsibility
+        unsafe { self.as_ptr::<u32>().add(register.into()).read_volatile() }
+    }
+
+    /// Reads the register at the given offset into the configuration space.
+    /// `register` is in registers, i.e. 4-byte multiples, **not** in bytes.
+    ///
+    /// # Safety
+    /// * The caller is responsible for managing any side effects this write may have.
+    unsafe fn write_reg(&self, register: u8, value: u32) {
+        // SAFETY: Side-effects are the caller's responsibility
+        unsafe {
+            self.as_mut_ptr::<u32>()
+                .add(register.into())
+                .write_volatile(value)
+        }
+    }
+
+    /// Writes to a register and then reads the value back, before resetting the register to its initial value.
+    /// The return value is the read value
+    ///
+    /// This is useful to calculate the size of a BAR, by seeing which bits are able to be set by software.
+    ///
+    /// # Safety
+    /// This method will briefly change the value of the register.
+    /// It is the caller's responsibility to ensure that any side-effects of this write are sound.  
+    unsafe fn write_and_reset(&self, register: u8, value: u32) -> u32 {
+        // SAFETY: Reading registers doesn't have side effects
+        let initial_value = unsafe { self.read_reg(register) };
+        // SAFETY: The caller guarantees this is sound
+        unsafe { self.write_reg(register, value) }
+        // SAFETY: Reading registers doesn't have side effects
+        let new_value = unsafe { self.read_reg(register) };
+        // SAFETY: The caller guarantees this is sound. This is the same value as the register held originally.
+        unsafe { self.write_reg(register, initial_value) };
+
+        new_value
     }
 }
 
@@ -121,14 +174,18 @@ struct PciBusCache {
 /// A cache of the system's PCI devices
 #[derive(Debug)]
 struct PciSegmentCache {
+    /// The PCIe controller for which this is a cache
     controller: PcieController,
 
     /// The segment's buses.
     /// This vector is unsorted, so bus `n` is not guaranteed to be at index `n`.
-    /// To find a bus cache by its bus number, use the [`bus`][PciCache::get_bus] method.
+    /// To find a bus cache by its bus number, use the [`get_bus`] method.
+    ///
+    /// [`get_bus`]: PciSegmentCache::get_bus
     buses: Vec<PciBusCache>,
 }
 
+/// A cache of all the PCI devices discovered on the system
 #[derive(Debug)]
 struct PciCache {
     /// The system's segments
@@ -143,12 +200,7 @@ impl PciMappedFunction {
     /// * The caller is responsible for managing any side effects this read may have.
     unsafe fn read_reg(&self, register: u8) -> u32 {
         // SAFETY: Side-effects are the caller's responsibility
-        unsafe {
-            self.registers
-                .as_ptr::<u32>()
-                .add(register.into())
-                .read_volatile()
-        }
+        unsafe { self.registers.read_reg(register) }
     }
 
     /// Reads the register at the given offset into the configuration space.
@@ -158,20 +210,7 @@ impl PciMappedFunction {
     /// * The caller is responsible for managing any side effects this write may have.
     unsafe fn write_reg(&self, register: u8, value: u32) {
         // SAFETY: Side-effects are the caller's responsibility
-        unsafe {
-            self.registers
-                .as_mut_ptr::<u32>()
-                .add(register.into())
-                .write_volatile(value)
-        }
-    }
-
-    unsafe fn write_and_reset(&self, register: u8, value: u32) -> u32 {
-        let initial_value = self.read_reg(register);
-        self.write_reg(register, value);
-        let new_value = self.read_reg(register);
-        self.write_reg(register, initial_value);
-        new_value
+        unsafe { self.registers.write_reg(register, value) }
     }
 
     /// Reads the device's PCI header.
@@ -241,14 +280,17 @@ impl PciSegmentCache {
 }
 
 impl PciCache {
+    /// Gets an iterator over the functions in the cache
     fn functions(&self) -> impl Iterator<Item = &PciMappedFunction> {
         self.segments.iter().flat_map(|b| b.functions())
     }
-
+    
+    /// Gets an iterator over mutable references to the functions in the cache
     fn functions_mut(&mut self) -> impl Iterator<Item = &mut PciMappedFunction> {
         self.segments.iter_mut().flat_map(|b| b.functions_mut())
     }
 
+    /// Gets the cache for a specific segment, if present.
     fn get_segment(&self, segment: u16) -> Option<&PciSegmentCache> {
         self.segments
             .iter()
@@ -267,11 +309,7 @@ unsafe fn map_pci_registers(
     controller: &PcieController,
     function: PciFunction,
 ) -> PcieMappedRegisters {
-    let offset = (function.get_bus_number() as usize - controller.min_bus as usize) << 20
-        | (function.get_device_number() as usize) << 15
-        | (function.get_function_number() as usize) << 12;
-
-    let phys_addr = controller.address + offset;
+    let phys_addr = function.get_register_address(controller.min_bus, controller.address);
     let start = PhysFrame::containing_address(phys_addr);
 
     // SAFETY: This is the frame of a PCIe device's config registers
@@ -391,15 +429,21 @@ pub fn lspci(args: &[&str]) {
         print!("{}  ", function_cache.function);
         print!("{}  ", header.device_code);
         print!("{:?}", header.class_code);
+        println!();
 
         if is_verbose {
-            print!(
+            println!(
                 "  Mapped at {:#x}",
                 function_cache.registers.page.start_address()
-            )
-        }
+            );
 
-        println!();
+            if let Some(capabilities) = function_cache.capabilities() {
+                println!("  Capabilities:");
+                for (c, _) in capabilities {
+                    println!("    {c:?}");
+                }
+            }
+        }
     });
 }
 
@@ -458,6 +502,12 @@ pub unsafe fn init(mcfg: Mcfg) {
     for function in lock.functions_mut() {
         let header = function.read_header().unwrap().unwrap();
 
+        if let Some(capabilities) = function.capabilities() {
+            for (c, i) in capabilities {
+                debug!("{c:?}, {i}");
+            }
+        }
+
         if let classcodes::ClassCode::SerialBusController(SerialBusControllerType::UsbController(
             classcodes::USBControllerType::Xhci,
         )) = header.class_code
@@ -484,6 +534,7 @@ pub unsafe fn init(mcfg: Mcfg) {
 ///
 /// # Safety
 /// * All accesses to the returned pointer should be volatile
+/// * Writes to the pointer may have side effects for the hardware - these must be taken into account
 pub unsafe fn get_pci_ptr<T>(
     segment: u16,
     bus: u8,

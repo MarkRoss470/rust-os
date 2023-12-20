@@ -3,7 +3,7 @@
 use super::{
     bar::Bar,
     classcodes::{ClassCode, InvalidValueError},
-    devices::{PciFunction, PciRegister}, split_to_u16, split_to_u8, PcieController, PciMappedFunction,
+    devices::PciFunction, split_to_u16, split_to_u8, PciMappedFunction,
 };
 
 /// The vendor:device code of a particular PCI device
@@ -172,9 +172,17 @@ impl InterruptPin {
 pub struct PciGeneralDeviceHeader {
     function: PciFunction,
 
-    /// Points to the Card Information Structure.
+    /// Points (TODO: how) to the Card Information Structure.
     pub cardbus_cis_pointer: u32,
+    /// For PCI expansion cards, these fields are used to uniquely identify the board 
+    /// (as opposed to [`device_code`], which identifies the PCI controller)
+    /// 
+    /// [`device_code`]: PciHeader::device_code
     pub subsystem_device_code: PciDeviceId,
+    /// A field indicating the physical address of expansion ROM.
+    /// See the [PCI spec 2.2] section 6.2.5.2 for more info.
+    /// 
+    /// [PCI spec 2.2]: https://ics.uci.edu/~harris/ics216/pci/PCI_22.pdf
     pub expansion_rom_base_address: u32,
     /// A pointer into this device's configuration space, pointing to a linked list of the device's capabilities
     pub capabilities_pointer: Option<u8>,
@@ -244,15 +252,15 @@ impl PciGeneralDeviceHeader {
         }
 
         // SAFETY: the caller guarantees that this register really is a BAR
-        unsafe { Bar::new(function, 4 + bar_number) }
+        unsafe { Bar::new(&function.registers, 4 + bar_number) }
     }
 }
 
 /// The additional headers of a PCI to PCI bridge (header type 0x01)
 #[derive(Debug, Clone, Copy)]
 pub struct PciToPciBridgeHeader {
+    /// Which PCI function this header is for
     function: PciFunction,
-
     pub secondary_latency_timer: u8,
     /// The highest bus number of any bus which is downstream of this bridge.
     /// This controls how packets are routed on the PCI bus - any packets with a bus number between
@@ -368,7 +376,7 @@ impl PciToPciBridgeHeader {
         }
 
         // SAFETY: the caller guarantees that this register really is a BAR
-        unsafe { Bar::new(function, 4 + bar_number) }
+        unsafe { Bar::new(&function.registers, 4 + bar_number) }
     }
 }
 

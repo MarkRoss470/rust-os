@@ -2,10 +2,8 @@
 //! [device][PciDevice], [function][PciFunction], and [register][PciRegister]
 
 use core::fmt::Display;
-use spin::Mutex;
-use x86_64::instructions::port::{Port, PortWriteOnly};
 
-use super::{classcodes::InvalidValueError, registers::PciHeader};
+use x86_64::PhysAddr;
 
 /// An error which can occur when constructing a PCI address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,12 +134,19 @@ impl PciRegister {
 
     /// Gets the [`PciDevice`] which this register is a part of
     pub fn get_device(&self) -> PciDevice {
-        PciDevice { bus: self.bus, device: self.device }
+        PciDevice {
+            bus: self.bus,
+            device: self.device,
+        }
     }
 
     /// Gets the [`PciFunction`] which this register is a part of
     pub fn get_function(&self) -> PciFunction {
-        PciFunction { bus: self.bus, device: self.device, function: self.function }
+        PciFunction {
+            bus: self.bus,
+            device: self.device,
+            function: self.function,
+        }
     }
 
     /// Gets the bus number of the device this register is a part of
@@ -191,24 +196,12 @@ impl PciFunction {
         PciRegister::from_parts(self.bus, self.device, self.function, offset)
     }
 
-    // /// Reads the PCI device's header
-    // pub fn get_header(&self) -> Result<Option<PciHeader>, InvalidValueError> {
-    //     let mut registers = [0; 0x11];
-
-    //     for (i, register) in registers.iter_mut().enumerate() {
-    //         // SAFETY:
-    //         // Reading from the header should not have side effects
-    //         unsafe {
-    //             *register = self.register(i as u8 * 4).unwrap().read_u32();
-    //         }
-    //     }
-
-    //     PciHeader::from_registers(registers, self)
-    // }
-
     /// Gets the [`PciDevice`] which this function is a part of
     pub fn get_device(&self) -> PciDevice {
-        PciDevice { bus: self.bus, device: self.device }
+        PciDevice {
+            bus: self.bus,
+            device: self.device,
+        }
     }
 
     /// Gets the device number of the device this function is a part of
@@ -224,6 +217,15 @@ impl PciFunction {
     /// Gets the function number
     pub fn get_function_number(&self) -> u8 {
         self.function
+    }
+
+    /// Gets the starting address of this function's PCIe registers, assuming the controller's registers start at `start`
+    pub fn get_register_address(&self, min_bus: u8, start: PhysAddr) -> PhysAddr {
+        let offset = (self.get_bus_number() as usize - min_bus as usize) << 20
+            | (self.get_device_number() as usize) << 15
+            | (self.get_function_number() as usize) << 12;
+
+        start + offset
     }
 }
 
@@ -255,6 +257,7 @@ impl PciDevice {
         self.bus
     }
 
+    /// Gets the device number of this device on its bus.
     pub fn get_device_number(&self) -> u8 {
         self.device
     }
