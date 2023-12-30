@@ -127,6 +127,9 @@ impl<'a> MsixInterruptArray<'a> {
     ///    The pointer must be valid for reads and writes for the lifetime `'a`
     /// * `last_index` must be the index of the last entry in the table, i.e. one less than the table's length.
     pub unsafe fn new(start: *const MsixTableEntry, last_index: usize) -> Self {
+        assert!(start.is_aligned());
+        assert!(!start.is_null());
+
         Self {
             start,
             last_index,

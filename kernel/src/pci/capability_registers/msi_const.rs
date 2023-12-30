@@ -7,7 +7,7 @@ use crate::pci::{PciMappedFunction, PcieMappedRegisters};
 use super::MsiControl;
 
 /// A read-only view into the MSI capability of a PCI device. If mutability is needed, use [`MessageSignalledInterruptsCapabilityMut`].
-/// 
+///
 /// [`MessageSignalledInterruptsCapabilityMut`]: super::msi_mut::MessageSignalledInterruptsCapabilityMut
 #[derive(Debug)]
 pub struct MessageSignalledInterruptsCapability<'a> {
@@ -27,14 +27,17 @@ pub struct MessageSignalledInterruptsCapability<'a> {
 
 impl<'a> MessageSignalledInterruptsCapability<'a> {
     /// # Safety:
-    /// * `offset` is the offset of an MSI capabilities structure within the configuration space of `function`
+    /// * `offset` is the register (not byte) offset of an MSI capabilities structure within the configuration space of `function`
     pub(super) unsafe fn new(function: &PciMappedFunction, offset: u8) -> Self {
         let capability_start_ptr =
         // SAFETY: `offset` is the offset of an MSI capabilities structure
-            unsafe { function.registers.as_ptr::<u8>().add(offset as _) };
+        unsafe { function.registers.as_ptr::<u32>().add(offset as _) };
+
+        assert!(capability_start_ptr.is_aligned_to(4));
+        assert!(!capability_start_ptr.is_null());
 
         // SAFETY: The control register is at offset 2 in the MSI capabilities structure
-        let control_ptr = unsafe { capability_start_ptr.add(2).cast::<MsiControl>() };
+        let control_ptr = unsafe { capability_start_ptr.cast::<MsiControl>().add(1) };
         // SAFETY: The pointer is valid
         let control = unsafe { control_ptr.read_volatile() };
 
@@ -48,13 +51,13 @@ impl<'a> MessageSignalledInterruptsCapability<'a> {
         };
 
         let offset_for_64_bit = if is_64_bit { 4 } else { 0 };
-        
+
         // SAFETY: The message address low register is at offset 4 in the MSI capabilities structure
-        let message_address_low = unsafe {capability_start_ptr.add(4).cast()};
+        let message_address_low = unsafe { capability_start_ptr.add(4).cast() };
 
         // SAFETY: The data register is at offset 8 in the MSI capabilities structure
-        let data = unsafe {capability_start_ptr.add(12 + offset_for_64_bit).cast()};
-        
+        let data = unsafe { capability_start_ptr.add(12 + offset_for_64_bit).cast() };
+
         Self {
             control: control_ptr,
             message_address_low,
@@ -66,7 +69,7 @@ impl<'a> MessageSignalledInterruptsCapability<'a> {
     }
 
     /// Reads the [`control`] register
-    /// 
+    ///
     /// [`control`]: MessageSignalledInterruptsCapability::control
     pub fn control(&self) -> MsiControl {
         // SAFETY: It's unsound to create a reference in to a `PcieMappedRegisters`, so no references exist for this data
@@ -90,7 +93,7 @@ impl<'a> MessageSignalledInterruptsCapability<'a> {
     }
 
     /// Reads the [`data`] register
-    /// 
+    ///
     /// [`data`]: MessageSignalledInterruptsCapability::data
     pub fn data(&self) -> u16 {
         // SAFETY: It's unsound to create a reference in to a `PcieMappedRegisters`, so no references exist for this data
