@@ -62,5 +62,34 @@ pub unsafe fn init_gdt() {
         ES::set_reg(data_segment);
         SS::set_reg(data_segment);
     }
+}
 
+/// One of the stacks used by the kernel
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stack {
+    /// The stack for normal interrupt handlers
+    InterruptHandler,
+    /// The stack for the double fault interrupt handler
+    DoubleFaultHandler,
+    /// Another stack
+    Other,
+}
+
+/// Gets which stack the given address falls into
+pub fn get_stack(address: usize) -> Stack {
+    // SAFETY: This is just getting an address, not reading or writing
+    let interrupts_stack_pointer = unsafe { INTERRUPTS_STACK.as_ptr() as usize };
+
+    // SAFETY: This is just getting an address, not reading or writing
+    let double_fault_stack_pointer = unsafe { DOUBLE_FAULT_STACK.as_ptr() as usize };
+
+    if (interrupts_stack_pointer..interrupts_stack_pointer + STACK_SIZE).contains(&address) {
+        Stack::InterruptHandler
+    } else if (double_fault_stack_pointer..double_fault_stack_pointer + STACK_SIZE)
+        .contains(&address)
+    {
+        Stack::DoubleFaultHandler
+    } else {
+        Stack::Other
+    }
 }

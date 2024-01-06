@@ -2,7 +2,7 @@ use core::panic::PanicInfo;
 
 use bootloader_api::BootInfo;
 
-use crate::{init, serial_print, serial_println, println, BOOT_CONFIG};
+use crate::{init, serial_print, serial_println, println, BOOT_CONFIG, cpu};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
@@ -34,6 +34,11 @@ pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
 fn panic(info: &PanicInfo) -> ! {
     serial_println!("[failure]");
     serial_println!("{}", info);
+
+    let stack_pointer_approx = info as *const _ as usize;
+
+    println!("Current stack pointer is approximately {:#x}", stack_pointer_approx);
+    println!("In stack {:?}", cpu::gdt::get_stack(stack_pointer_approx));
 
     exit_qemu(QemuExitCode::Failed);
 }
