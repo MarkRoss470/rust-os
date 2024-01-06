@@ -6,6 +6,10 @@ pub mod xhci;
 
 /// A USB route string. This uniquely identifies a connected USB device on a root port by which port it is plugged into on a hub,
 /// which port that hub is plugged into, etc.
+/// 
+/// This data structure is defined in section 8.9 of the [USB3 specification].
+/// 
+/// [USB3 specification]: https://www.usb.org/document-library/usb-32-revision-11-june-2022
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct RouteString(u32);
 
