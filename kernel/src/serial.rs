@@ -3,6 +3,7 @@
 use lazy_static::lazy_static;
 use spin::Mutex;
 use uart_16550::SerialPort;
+use x86_64::instructions::interrupts;
 
 lazy_static! {
     pub static ref SERIAL1: Mutex<SerialPort> = {
@@ -18,7 +19,6 @@ lazy_static! {
 #[doc(hidden)]
 pub fn _print(args: core::fmt::Arguments) {
     use core::fmt::Write;
-    use x86_64::instructions::interrupts;
 
     // Disable interrupts while locking mutex to prevent deadlocks
     interrupts::without_interrupts(|| {
@@ -44,4 +44,46 @@ macro_rules! serial_println {
     ($fmt:expr) => ($crate::serial_print!(concat!($fmt, "\n")));
     ($fmt:expr, $($arg:tt)*) => ($crate::serial_print!(
         concat!($fmt, "\n"), $($arg)*));
+}
+
+/// Reads a byte from the serial input.
+///
+/// This function will block if no data is sent to the serial port, so should only be called if this is guaranteed.
+/// This function is intended to be used to read commands from the test handler (see [`test_runner`])
+///
+/// [`test_runner`]: crate::tests::test_runner
+#[cfg(test)]
+pub fn read() -> u8 {
+    // Disable interrupts while locking mutex to prevent deadlocks
+    interrupts::without_interrupts(|| SERIAL1.lock().receive())
+}
+
+#[cfg(test)]
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
+
+/// Reads a line from the serial input.
+///
+/// This function will block if no data is sent to the serial port, so should only be called if this is guaranteed.
+/// This function is intended to be used to read commands from the test handler (see [`test_runner`])
+///
+/// [`test_runner`]: crate::tests::test_runner
+#[cfg(test)]
+pub fn readln() -> String {
+    let mut s = Vec::new();
+
+    loop {
+        // Disable interrupts while locking mutex to prevent deadlocks
+        let b = read();
+
+        if b == b'\n' {
+            break;
+        } else {
+            s.push(b);
+        }
+    }
+
+    String::from_utf8_lossy(&s).to_string()
 }

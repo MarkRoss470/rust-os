@@ -1,11 +1,13 @@
 use std::{
-    ffi::{OsStr, OsString},
     fs,
+    io::{Read, Write},
     path::PathBuf,
-    process::Command,
+    process::{ChildStdout, Command, ExitCode, Stdio},
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use clap::Parser;
+use rayon::prelude::*;
 
 /// Struct to store the command line args parsed by clap
 #[derive(Parser, Debug)]
@@ -14,6 +16,10 @@ struct Args {
     /// Runs the kernel using qemu after compiling it.
     #[arg(long, action)]
     run: bool,
+
+    /// Compiles the kernel in test mode and tests it.
+    #[arg(long, action)]
+    test: bool,
 
     /// Runs the kernel ready for a debugger to attach, with serial output written to the given file.
     /// Has no effect if not combined with --run.
@@ -55,11 +61,17 @@ fn prepare_cargo_command(args: &Args, dir: &str, subcommand: &str) -> Command {
     cargo_process.arg(subcommand).current_dir(dir);
 
     if args.release {
-        cargo_process.arg("--release");
+        if args.test {
+            // This is a custom profile defined for the kernel which builds with optimisations and debug symbols
+            cargo_process.arg("--profile=release-with-debug"); 
+        } else {
+            cargo_process.arg("--release");
+        }
     }
 
     cargo_process
 }
+
 /// Prepares a call to the `qemu-system-x86-64` command.
 ///
 /// # Arguments
@@ -84,8 +96,9 @@ fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
     if test {
         c.arg("-device")
             .arg("isa-debug-exit,iobase=0xf4,iosize=0x04")
-            .arg("-display")
-            .arg("none");
+            // .arg("-display")
+            // .arg("none")
+            .arg("-snapshot"); // Any writes to drives are discarded after the VM exits
     }
 
     if let Some(ref file) = args.debug {
@@ -110,13 +123,22 @@ fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
     c
 }
 
-fn main() {
-    let args = &Args::parse();
-
+fn main() -> ExitCode {
     for (var, _) in std::env::vars() {
         if var.contains("CARGO") || var.contains("RUST") {
             std::env::remove_var(var);
         }
+    }
+
+    let args = &Args::parse();
+
+    // If the --test flag is set, test the kernel instead
+    if args.test {
+        if args.run {
+            panic!("--run and --test flags are mutually exclusive");
+        }
+
+        return run_tests(args);
     }
 
     let kernel_dir = kernel_dir();
@@ -143,19 +165,19 @@ fn main() {
 
     let out_dir = PathBuf::from(kernel_dir).join("images");
     // Create the directory to put kernel images, if it doesn't exist.
-    fs::create_dir_all(&out_dir);
+    fs::create_dir_all(&out_dir).expect("Should have been able to create output directory");
 
     // create a BIOS disk image
     let bios_path = out_dir.join("bios.img");
     bootloader::BiosBoot::new(&kernel)
         .create_disk_image(&bios_path)
-        .unwrap();
+        .expect("Should have been able to create BIOS image");
 
     // create a BIOS disk image
     let uefi_path = out_dir.join("uefi.img");
     bootloader::UefiBoot::new(&kernel)
         .create_disk_image(&uefi_path)
-        .unwrap();
+        .expect("Should have been able to create UEFI image");
 
     if args.release {
         cargo_process.arg("--release");
@@ -170,16 +192,16 @@ fn main() {
     }
 
     println!("{}", bios_path.to_str().unwrap());
+
+    ExitCode::SUCCESS
 }
 
-/// Compiles the kernel in test mode and launches it
-#[test]
-fn run_tests() {
-    use std::io::Read;
-    use std::process::Stdio;
-
-    let args = &Args::parse();
-
+/// Compiles the kernel in test mode and launches it for each test, recording the results.
+///
+/// In order to isolate different tests from each other, each one is run in a different VM instance.
+/// This function first runs the kernel and queries it with how many tests there are, then runs each one individually.
+/// Tests are run in parallel to speed up execution.
+fn run_tests(args: &Args) -> ExitCode {
     let kernel_dir = kernel_dir();
 
     // Create a new cargo process to compile the kernel for tests
@@ -213,24 +235,176 @@ fn run_tests() {
         .strip_suffix(")\n")
         .unwrap(); // Strip the end bracket
 
+    println!("Using test kernel binary at {test_bin}");
+
     // Parse the path to the test kernel
     let kernel = PathBuf::from(kernel_dir).join(test_bin);
 
     // create a BIOS disk image
-    let bios_path = kernel.parent().unwrap().join("bios.img");
-    bootloader::BiosBoot::new(&kernel)
-        .create_disk_image(&bios_path)
+    let uefi_path = kernel.parent().unwrap().join("uefi.img");
+    bootloader::UefiBoot::new(&kernel)
+        .create_disk_image(&uefi_path)
         .unwrap();
 
-    let qemu_exit_code = prepare_qemu_command(args, bios_path.to_str().unwrap(), true)
-        .spawn()
+    // Run the kernel in qemu to ask it how many tests there are
+    let (mut qemu_command, mut stdin, chars) = run_qemu_test(args, uefi_path.to_str().unwrap());
+
+    // Send the 'count' command. The kernel should respond with a number of tests
+    stdin
+        .write_all(b"count\n")
+        .expect("Failed to write to stdin");
+
+    let output = chars.collect::<Vec<u8>>();
+    let num_tests = std::str::from_utf8(&output)
         .unwrap()
-        .wait()
-        .unwrap()
-        .code()
+        .trim()
+        .parse()
         .unwrap();
 
     // Check that the test runner exited successfully
     // TODO: investigate why this isn't the same number as defined in the kernel
-    assert_eq!(qemu_exit_code, 33);
+    assert_eq!(qemu_command.wait().unwrap().code().unwrap(), 33);
+
+    // How many tests failed
+    // This is atomic rather than just mutable because the following iterator is multi-threaded
+    let failures = AtomicUsize::new(0);
+
+    // Check each test in parallel
+    (0..num_tests).into_par_iter().for_each(|i| {
+        let (mut qemu_command, mut stdin, chars) = run_qemu_test(args, uefi_path.to_str().unwrap());
+
+        // Send a 'run' command with the command number
+        stdin
+            .write_all(format!("run\n{i}\n").as_bytes())
+            .expect("Failed to write to stdin");
+
+        // Get the output of the rest of the kernel's execution so that it can be printed in case the test fails
+        let output = chars.rest();
+
+        // Extract the test name from the output
+        let test_name: Vec<u8> = output.split(|c| *c == b'\n').next().unwrap().to_vec();
+        let test_name = std::str::from_utf8(&test_name).unwrap().trim_end();
+
+        // Check that the test runner exited successfully
+        // TODO: investigate why this isn't the same number as defined in the kernel
+        if qemu_command.wait().unwrap().code().unwrap() == 33 {
+            // TODO: change these ANSI codes to something more portable
+            println!("Running {test_name}... [\x1b[32mOK\x1b[0m]");
+        } else {
+            // If the test fails, print its output in yellow to be more obvious
+            println!("{test_name}... [\x1b[31mERROR\x1b[0m]");
+            println!("\x1b[31mSerial output of failed test:\x1b[0m");
+            println!("\x1b[33m-----------------------------------");
+            println!("{}", String::from_utf8_lossy(&output));
+            println!("-----------------------------------\x1b[0m");
+
+            failures.fetch_add(1, Ordering::Relaxed);
+        }
+    });
+
+    let failures = failures.load(Ordering::Relaxed);
+
+    println!(
+        "\n{} out of {} tests completed successfully",
+        num_tests - failures,
+        num_tests
+    );
+
+    if failures != 0 {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// Launches the kernel in qemu from the image at the given path and waits for it to write a message to stdout
+/// indicating it's listening for a test command.
+fn run_qemu_test(
+    args: &Args,
+    uefi_path: &str,
+) -> (
+    std::process::Child,
+    std::process::ChildStdin,
+    ChildStdoutIter,
+) {
+    let mut qemu_command = prepare_qemu_command(args, uefi_path, true)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    // Get handles to stdout
+    let stdout = qemu_command.stdout.take().expect("Failed to open stdout");
+    let stdin = qemu_command.stdin.take().expect("Failed to open stdin");
+
+    let mut chars = ChildStdoutIter::new(stdout);
+
+    // Wait for the kernel to print the ready message
+    'outer: loop {
+        for c in b">>>>>> READY FOR TEST COMMAND\n" {
+            if *c != chars.next().unwrap() {
+                continue 'outer;
+            }
+        }
+
+        break;
+    }
+
+    (qemu_command, stdin, chars)
+}
+
+/// A wrapper around a child process, which exposes an iterator over the process's stdout.
+#[derive(Debug)]
+struct ChildStdoutIter {
+    /// The process whose output is being iterated
+    process: ChildStdout,
+    /// The buffered output
+    buffer: [u8; 256],
+    /// The current position in the buffer
+    i: usize,
+    /// The length of data in the buffer
+    n: usize,
+}
+
+impl Iterator for ChildStdoutIter {
+    type Item = u8;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i < self.n {
+            let v = self.buffer[self.i];
+            self.i += 1;
+            Some(v)
+        } else {
+            self.i = 1;
+            self.n = self.process.read(&mut self.buffer).unwrap();
+            if self.n == 0 {
+                None
+            } else {
+                Some(self.buffer[0])
+            }
+        }
+    }
+}
+
+impl ChildStdoutIter {
+    /// Gets the rest of the process's output (that is, anything that's not been consumed by [`next`])
+    ///
+    /// [`next`]: ChildStdoutIter::next
+    fn rest(mut self) -> Vec<u8> {
+        let mut v = self.buffer[self.i..self.n].to_vec();
+
+        self.process.read_to_end(&mut v).unwrap();
+
+        v
+    }
+
+    /// Constructs a new [`ChildStdoutIter`]
+    fn new(process: ChildStdout) -> Self {
+        Self {
+            process,
+            buffer: [0; 256],
+            i: 0,
+            n: 0,
+        }
+    }
 }

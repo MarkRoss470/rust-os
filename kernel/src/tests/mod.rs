@@ -2,7 +2,7 @@ use core::panic::PanicInfo;
 
 use bootloader_api::BootInfo;
 
-use crate::{init, serial_print, serial_println, println, BOOT_CONFIG, cpu};
+use crate::{cpu, init, println, serial, serial_println, BOOT_CONFIG};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
@@ -32,12 +32,14 @@ pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
 /// This function is called on panic in a test build.
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    serial_println!("[failure]");
-    serial_println!("{}", info);
+    println!("{}", info);
 
     let stack_pointer_approx = info as *const _ as usize;
 
-    println!("Current stack pointer is approximately {:#x}", stack_pointer_approx);
+    println!(
+        "Current stack pointer is approximately {:#x}",
+        stack_pointer_approx
+    );
     println!("In stack {:?}", cpu::gdt::get_stack(stack_pointer_approx));
 
     exit_qemu(QemuExitCode::Failed);
@@ -52,14 +54,14 @@ where
     T: Fn(),
 {
     fn run(&self) {
-        serial_print!("{}...\t", core::any::type_name::<T>());
+        println!("{}", core::any::type_name::<T>());
         self();
-        serial_println!("[ok]");
     }
 }
 
-bootloader_api::entry_point!(kernel_main, config=&BOOT_CONFIG);
+bootloader_api::entry_point!(kernel_main, config = &BOOT_CONFIG);
 
+/// The kernel's entry point when running tests
 fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // SAFETY:
     // This is the entry point for the program, so init() cannot have been run before.
@@ -74,14 +76,27 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     exit_qemu(QemuExitCode::Success);
 }
 
+/// The runner for a test. Because of the way the host-side of the test runner is written,
+/// this function responds to two different types of command, read from serial input:
+///
+/// * `count`: Writes the number of tests to serial output.
+/// * `run`: Reads the test number from serial input and runs it.
 pub fn test_runner(tests: &[&dyn Testable]) {
-    println!("Running {} tests", tests.len());
+    // This is so that the host test runner script knows when to send the command
+    println!(">>>>>> READY FOR TEST COMMAND");
+    let command = serial::readln();
 
-    for test in tests {
-        test.run();
+    match command.as_str() {
+        "count" => {
+            serial_println!("{}", tests.len());
+        }
+        "run" => {
+            let i = serial::readln().parse::<usize>().unwrap();
+            let test = tests[i];
+            test.run();
+        }
+        _ => panic!("Unknown command {command:?}"),
     }
-
-    println!("All tests passed");
 }
 
 #[test_case]
