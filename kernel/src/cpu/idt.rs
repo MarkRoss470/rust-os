@@ -1,7 +1,8 @@
 //! Functionality to manage the Interrupt Descriptor Table, and the PICs which provide hardware interrupts
 
-use acpica_bindings::types::{AcpiInterruptCallback, AcpiInterruptHandledStatus, AcpiInterruptCallbackTag};
-use alloc::collections::BTreeSet;
+use acpica_bindings::types::{
+    AcpiInterruptCallback, AcpiInterruptCallbackTag, AcpiInterruptHandledStatus,
+};
 use alloc::vec::Vec;
 use log::{trace, warn};
 use spin::Mutex;
@@ -10,7 +11,7 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 use crate::{
     cpu::interrupt_controllers::end_interrupt,
     global_state::KERNEL_STATE,
-    graphics::{Colour, WRITER, flush},
+    graphics::{flush, Colour, WRITER},
     println,
     scheduler::poll_tasks,
 };
@@ -18,7 +19,8 @@ use crate::{
 
 use super::{
     gdt::{DOUBLE_FAULT_STACK_INDEX, INTERRUPTS_STACK_INDEX},
-    interrupt_controllers::PIC_1_OFFSET, ps2::PS2_CONTROLLER,
+    interrupt_controllers::PIC_1_OFFSET,
+    ps2::PS2_CONTROLLER,
 };
 
 /// The Interrupt Descriptor Table
@@ -270,12 +272,12 @@ impl InterruptIndex {
 ///
 /// The remaining solution is to make a different version of the function in memory for each interrupt served,
 /// and const generics are just the tool for the job.
-extern "x86-interrupt" fn unknown_interrupt<const N: usize>(_: InterruptStackFrame) {
+extern "x86-interrupt" fn unknown_interrupt<const N: u8>(_: InterruptStackFrame) {
     /// A non-generic inner function - this stops all this code being monomorphized, which would waste memory
-    fn inner(interrupt: usize) {
+    fn inner(interrupt: u8) {
         warn!(target: "unknown_interrupt", "Unknown interrupt - calling ACPICA callbacks {interrupt}");
 
-        let callbacks = &mut ACPI_CALLBACKS.try_lock().unwrap()[interrupt];
+        let callbacks = &mut ACPI_CALLBACKS.try_lock().unwrap()[interrupt as usize];
         callbacks.retain_mut(|callback| {
             // SAFETY: This is the correct interrupt handler
             let r = unsafe { callback.call() };
@@ -284,6 +286,12 @@ extern "x86-interrupt" fn unknown_interrupt<const N: usize>(_: InterruptStackFra
     }
 
     inner(N);
+    
+    // SAFETY:
+    // This function is a hardware interrupt handler, so it must tell the interrupt controller that the handler has completed before exiting.
+    unsafe {
+        end_interrupt(N);
+    }
 }
 
 /// Interrupt handler for any interrupt there is not a dedicated handler for, for interrupts with an error code
