@@ -22,7 +22,7 @@ pc-keyboard = "0.7"
 libm = "0.2"
 
 # For sending print! to the host when running under qemu
-uart_16550 = "0.2.0"
+uart_16550 = "0.3.0"
 
 # For building nicer APIs around hardware registers
 bitfield-struct = "*"
