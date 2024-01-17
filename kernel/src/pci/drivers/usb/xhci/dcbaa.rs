@@ -55,8 +55,8 @@ impl DeviceContextBaseAddressArray {
     ) -> Self {
         assert!(len <= 256);
 
-        let scratchpad_buffer =
         // SAFETY: `page_size` is the controller's page size
+        let scratchpad_buffer =
             unsafe { ScratchpadBufferArray::new(max_scratchpad_buffers, page_size) };
 
         let mut s = Self {

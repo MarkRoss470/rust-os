@@ -29,9 +29,8 @@ impl<'a> MessageSignalledInterruptsCapability<'a> {
     /// # Safety:
     /// * `offset` is the register (not byte) offset of an MSI capabilities structure within the configuration space of `function`
     pub(super) unsafe fn new(function: &PciMappedFunction, offset: u8) -> Self {
-        let capability_start_ptr =
         // SAFETY: `offset` is the offset of an MSI capabilities structure
-        unsafe { function.registers.as_ptr::<u32>().add(offset as _) };
+        let capability_start_ptr = unsafe { function.registers.as_ptr::<u32>().add(offset as _) };
 
         assert!(capability_start_ptr.is_aligned_to(4));
         assert!(!capability_start_ptr.is_null());

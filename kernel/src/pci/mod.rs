@@ -327,9 +327,8 @@ unsafe fn scan_function(
     // SAFETY: `controller` is a real controller, all reads below are volatile
     let registers = unsafe { map_pci_registers(controller, function) };
 
-    let (vendor_id, device_id) =
     // SAFETY: Reading from PCI header registers shouldn't have side-effects.
-        unsafe { split_to_u16(registers.as_ptr::<u32>().read_volatile()) };
+    let (vendor_id, device_id) = unsafe { split_to_u16(registers.as_ptr::<u32>().read_volatile()) };
 
     if vendor_id == 0xffff {
         None

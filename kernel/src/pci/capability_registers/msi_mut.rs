@@ -33,8 +33,8 @@ impl<'a> MessageSignalledInterruptsCapabilityMut<'a> {
     /// # Safety:
     /// * `offset` is the offset of an MSI capabilities structure within the configuration space of `function`
     pub(super) unsafe fn new(function: &mut PciMappedFunction, offset: u8) -> Self {
-        let capability_start_ptr =
         // SAFETY: `offset` is the offset of an MSI capabilities structure
+        let capability_start_ptr =
             unsafe { function.registers.as_mut_ptr::<u8>().add(offset as _) };
 
         // SAFETY: The control register is at offset 2 in the MSI capabilities structure

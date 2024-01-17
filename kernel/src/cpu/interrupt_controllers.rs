@@ -123,10 +123,9 @@ pub unsafe fn init_local_apic() -> Result<(), ()> {
     // Disable interrupts while changing controller
     // to prevent race conditions where EOI is sent to the wrong controller
     without_interrupts(|| {
-        let mut local_apic =
         // SAFETY: This function is only called once per core.
         // The pointer was taken from the MADT so the APIC is definitely there.
-            unsafe { LocalApicRegisters::new(local_apic_addr.into()) };
+        let mut local_apic = unsafe { LocalApicRegisters::new(local_apic_addr.into()) };
 
         // local_apic.debug_registers();
 
