@@ -20,6 +20,7 @@ use crate::{
 
 use crate::pci::classcodes::{SerialBusControllerType, USBControllerType};
 
+use alloc::boxed::Box;
 use capability_registers::CapabilityRegisters;
 use log::debug;
 use x86_64::VirtAddr;
@@ -50,6 +51,10 @@ pub struct XhciController {
     ///
     /// [`DeviceContext`]: device_context::DeviceContext
     dcbaa: DeviceContextBaseAddressArray,
+    /// The controller's [`Interrupter`]s, which are used to report events to software
+    interrupters: Box<[Interrupter]>,
+    /// The doorbell registers, which software uses to tell the controller there are TRBs to be processed.
+    doorbell_registers: DoorbellRegisters,
 }
 
 impl XhciController {
@@ -121,6 +126,12 @@ impl XhciController {
         };
 
 
+        // SAFETY: This function is only called once per controller
+        let interrupters =
+            unsafe { Self::init_interrupters(&capability_registers, &mut runtime_registers) };
+
+        // TODO: interrupts
+
         // SAFETY: This function is only called once per controller.
         // No `Bar`s exist at this point in the function.
         unsafe {
@@ -133,6 +144,8 @@ impl XhciController {
             operational_registers,
             runtime_registers,
             dcbaa,
+            interrupters,
+            doorbell_registers,
         };
 
         debug!("{}: Enabling controller", function.function);
@@ -157,15 +170,13 @@ impl XhciController {
                 futures::pending!();
             }
 
-            println!(
-                "{}: Number of attached devices: {}",
-                function.function,
-                controller
-                    .operational_registers
-                    .ports()
-                    .filter(|port| port.read_status_and_control().device_connected())
-                    .count()
-            );
+
+        loop {
+            futures::pending!();
+
+            if let Some(trb) = controller.read_event_trb(0) {
+                debug!("{trb:?}");
+            }
         }
     }
 
@@ -273,6 +284,64 @@ impl XhciController {
         operational_registers.write_configure(configure_register);
     }
 
+    /// Initialises the [`Interrupter`] array in the runtime registers for this controller.
+    ///
+    /// # Safety
+    /// This function may only be called once per controller
+    unsafe fn init_interrupters(
+        capability_registers: &CapabilityRegisters,
+        runtime_registers: &mut RuntimeRegisters,
+    ) -> Box<[Interrupter]> {
+        let max_interrupters = capability_registers
+            .structural_parameters_1()
+            .max_interrupters();
+
+        (0..max_interrupters)
+            .map(|i| {
+                // SAFETY: This function is only called once, so no other `InterrupterRegisterSet` exists
+                let interrupter =
+                    unsafe { Interrupter::new(runtime_registers.interrupter(i as _)) };
+
+                // SAFETY: This enables interrupts for this interrupter
+                // unsafe {
+                //     interrupter.registers.set_interrupter_management(
+                //         interrupter
+                //             .registers
+                //             .read_interrupter_management()
+                //             .with_interrupt_enable(true),
+                //     );
+                // }
+
+                #[allow(clippy::let_and_return)] // TODO: remove when above code is un-commented
+                interrupter
+            })
+            .collect()
+    }
+
+
+    /// Reads an event from the event ring from the `i`th interrupter.
+    /// Certain event types will be intercepted and acted on before being returned, such as calling
+    /// [`update_dequeue`] for [`CommandCompletion`] TRBs.
+    ///
+    /// [`update_dequeue`]: CommandTrbRing::update_dequeue
+    /// [`CommandCompletion`]: EventTrb::CommandCompletion
+    fn read_event_trb(&mut self, i: usize) -> Option<EventTrb> {
+        let trb = self.interrupters[i].dequeue()?;
+
+        if let EventTrb::CommandCompletion(command_completion_trb) = trb {
+            match command_completion_trb.completion_code {
+                CompletionCode::Success => (),
+                error => error!("Error occurred processing TRB: {error:?}"),
+            }
+
+            // SAFETY: The address was read from a command completion TRB
+            unsafe {
+                self.command_ring
+                    .update_dequeue(command_completion_trb.command_trb_pointer);
+            }
+        }
+
+        Some(trb)
     }
 }
 

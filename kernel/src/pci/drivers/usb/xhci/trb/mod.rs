@@ -1,15 +1,17 @@
-#![allow(missing_docs, clippy::missing_docs_in_private_items)] // TODO: Docs
-
-use self::normal::NormalTrb;
-
+pub mod event;
+mod event_ring;
 pub mod normal;
 
-/// A type of TRB.
-/// 
-/// Taken from [this table]
-/// 
+pub use event::EventTrb;
+pub use event_ring::EventTrbRing;
+
+/// A type of TRB. Taken from [this table].
+///
+/// This enum only holds the type of TRB, not any data that they hold - see [`CommandTrb`], [`TransferTrb`], and [`EventTrb`].
+///
 /// [this table]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A518%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C89%2C513%2C0%5D
 #[derive(Debug)]
+#[allow(clippy::missing_docs_in_private_items)]
 enum TrbType {
     Normal,
     SetupStage,
@@ -19,6 +21,7 @@ enum TrbType {
     Link,
     EventData,
     NoOp,
+
     EnableSlotCommand,
     DisableSlotCommand,
     AddressDeviceCommand,
@@ -51,12 +54,16 @@ enum TrbType {
 }
 
 impl TrbType {
+    /// Constructs a [`TrbType`] from its bit representation
     const fn from_bits(bits: u32) -> Self {
         use TrbType::*;
 
+        #[allow(clippy::cast_possible_truncation)]
         let bits = bits as u8;
 
         match bits {
+            0 => Reserved(0),
+
             1 => Normal,
             2 => SetupStage,
             3 => DataStage,
@@ -65,6 +72,7 @@ impl TrbType {
             6 => Link,
             7 => EventData,
             8 => NoOp,
+
             9 => EnableSlotCommand,
             10 => DisableSlotCommand,
             11 => AddressDeviceCommand,
@@ -101,6 +109,7 @@ impl TrbType {
         }
     }
 
+    /// Converts a [`TrbType`] into its bit representation
     const fn into_bits(self) -> u32 {
         use TrbType::*;
 
@@ -113,6 +122,7 @@ impl TrbType {
             Link => 6,
             EventData => 7,
             NoOp => 8,
+
             EnableSlotCommand => 9,
             DisableSlotCommand => 10,
             AddressDeviceCommand => 11,

@@ -4,19 +4,10 @@ use core::fmt::Debug;
 
 use x86_64::VirtAddr;
 
-/// The runtime registers of an XHCI controller.
-/// 
-/// See the spec section [5.5] for more info.
-/// 
-/// [5.5]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A429%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C193%2C0%5D
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct RuntimeRegistersFields {
-    
-}
+use super::interrupter::InterrupterRegisterSet;
 
-/// Wrapper struct around [`RuntimeRegistersFields`] to ensure all reads and writes are volatile
-pub struct RuntimeRegisters(*mut RuntimeRegisters);
+/// The runtime registers of an XHCI controller
+pub struct RuntimeRegisters(*mut ());
 
 impl RuntimeRegisters {
     /// Wraps the given pointer.
@@ -28,6 +19,30 @@ impl RuntimeRegisters {
         let ptr = ptr.as_mut_ptr();
 
         Self(ptr)
+    }
+
+    /// Gets the value of the _Microframe Index Register_.
+    /// This register is updated every microframe (125 microseconds), while [`enabled`] is `true`.
+    ///
+    /// [`enabled`]: super::operational_registers::UsbCommand::enabled
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn microframe_index(&self) -> u16 {
+        // SAFETY: The first 32 bit register in runtime registers is the MFINDEX register
+        let reg = unsafe { self.0.cast::<u32>().read_volatile() };
+
+        // Lowest 14 bits are microframe register, other bits are reserved
+        reg as u16 & 0b11_1111_1111_1111
+    }
+
+    /// Gets the [`InterrupterRegisterSet`] at the given index
+    ///
+    /// # Safety
+    /// * Only one [`InterrupterRegisterSet`] may exist at once per interrupter,
+    ///     so this method may not be called if an existing instance exists for the given `i`.
+    pub unsafe fn interrupter(&mut self, i: usize) -> InterrupterRegisterSet {
+        // SAFETY: Interrupter registers start at offset 0x20 and are 32 bytes each, so this calculates the address of the `i`th interrupter.
+        // No other `InterrupterRegisterSet` exists for this `i`.
+        unsafe { InterrupterRegisterSet::new(VirtAddr::from_ptr(self.0) + 0x20usize + 32 * i) }
     }
 }
 
