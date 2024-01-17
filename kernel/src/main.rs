@@ -11,15 +11,26 @@
 #![feature(abi_x86_interrupt)]
 // For checking offsets of struct fields
 #![feature(offset_of)]
+// For checking pointer alignment
+#![feature(pointer_is_aligned)]
 // Nice-to-have int methods, such as `div_ceil`
 #![feature(int_roundings)]
-#![feature(pointer_byte_offsets)]
 // Set up warnings and lints
 #![warn(
-    //clippy::pedantic,
-    //clippy::nursery,
+    // clippy::pedantic,
+    // clippy::nursery,
     missing_docs,
     clippy::missing_docs_in_private_items,
+    clippy::semicolon_if_nothing_returned,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::ptr_as_ptr,
+    clippy::cast_ptr_alignment,
+    clippy::manual_assert,
+    clippy::map_unwrap_or,
+    clippy::redundant_closure,
+    clippy::redundant_closure_for_method_calls,
+    clippy::must_use_candidate,
     rustdoc::all,
     unsafe_op_in_unsafe_fn,
 )]
@@ -44,6 +55,7 @@ mod serial;
 mod acpi;
 mod allocator;
 mod cpu;
+mod devices;
 mod global_state;
 mod graphics;
 pub mod input;
@@ -52,7 +64,6 @@ mod scheduler;
 #[cfg(test)]
 mod tests;
 pub mod util;
-mod devices;
 
 use global_state::*;
 use graphics::init_graphics;
@@ -224,7 +235,6 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
         "Physical memory offset: {:#x}",
         boot_info.physical_memory_offset.into_option().unwrap()
     );
-    debug_memory_regions(&boot_info.memory_regions);
 
     // SAFETY: The provided `boot_info` is correct
     unsafe { cpu::init_frame_allocator(&boot_info.memory_regions) };
@@ -270,7 +280,7 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
     unsafe { cpu::init_ps2() };
 
     // SAFETY: This function is only called once.
-    unsafe { devices::init() };
+    // unsafe { devices::init() };
 
     println!("Finished initialising kernel");
     flush();
@@ -339,7 +349,7 @@ fn shell_loop() -> ! {
                                 "clear" => clear(),
                                 "kinfo" => kinfo(&commands[1..]),
                                 // SAFETY: For debugging only, not sound
-                                "interrupt" => unsafe {debug_interrupt(&commands[1..])},
+                                "interrupt" => unsafe { debug_interrupt(&commands[1..]) },
                                 _ => println!("Unknown command {c}"),
                             }
                         }
@@ -378,13 +388,12 @@ fn kinfo(args: &[&str]) {
             println!("MADT: {:?}", acpica.madt());
             println!("FADT: {:?}", acpica.fadt());
             println!("DSDT: {:?}", acpica.dsdt());
-            
+
             if let Some(mcfg) = acpica.mcfg() {
                 println!("MCFG: {:?}", acpica.mcfg());
                 for record in mcfg.records() {
                     println!("    Record: {record:?}");
                 }
-
             }
         }
 
@@ -397,13 +406,13 @@ fn kinfo(args: &[&str]) {
 
 /// Sends an interrupt on the vector specified in the first argument
 unsafe fn debug_interrupt(args: &[&str]) {
-    match args.first().map(|n|n.parse()) {
+    match args.first().map(|n| n.parse()) {
         Some(Ok(vector)) => {
             // SAFETY: For debugging only, not sound
             unsafe { send_debug_self_interrupt(vector) }
-        },
+        }
         _ => {
-        println!("First argument must be interrupt vector");
+            println!("First argument must be interrupt vector");
         }
     };
 }
