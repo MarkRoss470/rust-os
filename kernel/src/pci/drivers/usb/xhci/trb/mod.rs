@@ -1,7 +1,19 @@
+//! Types related to TRBs and TRB rings.
+//!
+//! There are three types of TRB ring:
+//! * [`CommandTrbRing`]s, which contain [`CommandTrb`]s
+//! * Transfer TRB rings (TODO: link), which contain [`TransferTrb`]s
+//! * [`EventTrbRing`]s, which contain [`EventTrb`]s
+
+use self::{link::LinkTrb, normal::NormalTrb};
+
+mod command_ring;
 pub mod event;
 mod event_ring;
+mod link;
 pub mod normal;
 
+pub use command_ring::CommandTrbRing;
 pub use event::EventTrb;
 pub use event_ring::EventTrbRing;
 
@@ -170,25 +182,130 @@ struct GenericTrbFlags {
     __: (),
 }
 
-#[repr(C, align(16))]
-struct GenericTrbFields {
-    data_1: u32,
-    data_2: u32,
-    data_3: u32,
-    flags: GenericTrbFlags,
-}
-
+/// An error indicating that a TRB ring is full
 #[derive(Debug)]
-pub enum Trb {
-    NormalTrb(NormalTrb),
+pub struct RingFullError;
+
+/// A TRB on a transfer TRB ring (TODO: link).
+///
+/// This tells the controller how to send or receive data.
+///
+/// See the spec section [6.4.1] for more info.
+///
+/// [6.4.1]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A472%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C548%2C0%5D
+#[derive(Debug)]
+#[allow(clippy::missing_docs_in_private_items)] // TODO: add docs with the corresponding structs
+pub enum TransferTrb {
+    /// A [`NormalTrb`]
+    Normal(NormalTrb),
+    SetupStage,
+    DataStage,
+    StatusStage,
+    Isoch,
+    /// A [`LinkTrb`]
+    Link(LinkTrb),
+    EventData,
+    NoOp,
 }
 
-impl Trb {
-    pub fn new(data: u64, config: u32, flags: u32) -> Self {
-        let generic_flags = GenericTrbFlags::from(flags);
-        match generic_flags.trb_type() {
-            TrbType::Normal => Self::NormalTrb(NormalTrb::new(data, config, flags)),
-            _ => todo!(),
+impl TransferTrb {
+    /// Converts the TRB to the data written to a TRB ring
+    pub fn to_parts(&self, cycle: bool) -> [u32; 4] {
+        match self {
+            TransferTrb::Normal(normal) => normal.to_parts(cycle),
+            TransferTrb::SetupStage => todo!(),
+            TransferTrb::DataStage => todo!(),
+            TransferTrb::StatusStage => todo!(),
+            TransferTrb::Isoch => todo!(),
+            TransferTrb::Link(link) => link.to_parts(cycle),
+            TransferTrb::EventData => todo!(),
+            TransferTrb::NoOp => todo!(),
+        }
+    }
+
+    /// Gets the chain bit for this TRB.
+    /// This is used to set the chain bit of [`LinkTrb`]s correctly, as this needs to match the TRB before it.
+    pub fn chain(&self) -> bool {
+        match self {
+            TransferTrb::Normal(normal) => normal.chain(),
+            TransferTrb::SetupStage => todo!(),
+            TransferTrb::DataStage => todo!(),
+            TransferTrb::StatusStage => todo!(),
+            TransferTrb::Isoch => todo!(),
+            TransferTrb::Link(link) => link.chain(),
+            TransferTrb::EventData => todo!(),
+            TransferTrb::NoOp => todo!(),
+        }
+    }
+}
+
+/// A TRB on the [`CommandTrbRing`].
+///
+/// This gives the controller a command to execute, used to manage slots, devices, and connections.
+///
+/// See the spec section [6.4.3] for more info.
+///
+/// [6.4.3]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A494%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C169%2C0%5D
+#[derive(Debug)]
+#[allow(clippy::missing_docs_in_private_items)] // TODO: add docs with the corresponding structs
+pub enum CommandTrb {
+    /// A [`LinkTrb`]
+    Link(LinkTrb),
+
+    EnableSlot,
+    DisableSlot,
+    AddressDevice,
+    ConfigureEndpoint,
+    EvaluateContext,
+    ResetEndpoint,
+    StopEndpoint,
+    SetTRDequeuePointer,
+    ResetDevice,
+    ForceEvent,
+    NegotiateBandwidth,
+    SetLatencyToleranceValue,
+    GetPortBandwidth,
+    ForceHeader,
+    /// A command which does nothing except cause the controller to send a [`CommandCompletion`] event.
+    ///
+    /// This is used to test that the command and event rings are set up properly
+    ///
+    /// [`CommandCompletion`]: event::EventTrb::CommandCompletion
+    NoOp,
+    GetExtendedProperty,
+    SetExtendedProperty,
+}
+
+impl CommandTrb {
+    /// Converts the TRB to the data written to a TRB ring
+    pub fn to_parts(&self, cycle: bool) -> [u32; 4] {
+        match self {
+            CommandTrb::Link(link) => link.to_parts(cycle),
+            CommandTrb::EnableSlot => todo!(),
+            CommandTrb::DisableSlot => todo!(),
+            CommandTrb::AddressDevice => todo!(),
+            CommandTrb::ConfigureEndpoint => todo!(),
+            CommandTrb::EvaluateContext => todo!(),
+            CommandTrb::ResetEndpoint => todo!(),
+            CommandTrb::StopEndpoint => todo!(),
+            CommandTrb::SetTRDequeuePointer => todo!(),
+            CommandTrb::ResetDevice => todo!(),
+            CommandTrb::ForceEvent => todo!(),
+            CommandTrb::NegotiateBandwidth => todo!(),
+            CommandTrb::SetLatencyToleranceValue => todo!(),
+            CommandTrb::GetPortBandwidth => todo!(),
+            CommandTrb::ForceHeader => todo!(),
+            CommandTrb::NoOp => [
+                0,
+                0,
+                0,
+                GenericTrbFlags::new()
+                    .with_cycle(cycle)
+                    .with_trb_type(TrbType::NoOpCommand)
+                    .into(),
+            ],
+            CommandTrb::GetExtendedProperty => todo!(),
+            CommandTrb::SetExtendedProperty => todo!(),
         }
     }
 }

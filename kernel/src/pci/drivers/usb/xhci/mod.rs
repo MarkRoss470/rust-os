@@ -11,25 +11,37 @@ use crate::{
         bar::Bar,
         classcodes::ClassCode,
         devices::PciFunction,
-        drivers::usb::xhci::dcbaa::DeviceContextBaseAddressArray,
+        drivers::usb::xhci::{
+            dcbaa::DeviceContextBaseAddressArray,
+            operational_registers::{
+                CommandRingControl, DeviceContextBaseAddressArrayPointer, OperationalRegisters,
+            },
+            trb::{CommandTrb, EventTrb},
+        },
         registers::{HeaderType, PciGeneralDeviceHeader},
         PciMappedFunction,
     },
-    println,
 };
 
 use crate::pci::classcodes::{SerialBusControllerType, USBControllerType};
 
 use alloc::boxed::Box;
 use capability_registers::CapabilityRegisters;
-use log::debug;
-use x86_64::VirtAddr;
+use log::{debug, error};
+use x86_64::{PhysAddr, VirtAddr};
 
-use self::runtime_registers::RuntimeRegisters;
+use self::{
+    doorbell::DoorbellRegisters,
+    interrupter::Interrupter,
+    runtime_registers::RuntimeRegisters,
+    trb::{event::command_completion::CompletionCode, CommandTrbRing, RingFullError},
+};
 
 pub mod capability_registers;
 mod dcbaa;
 mod device_context;
+mod doorbell;
+mod interrupter;
 pub mod operational_registers;
 pub mod runtime_registers;
 mod scratchpad;
@@ -51,6 +63,8 @@ pub struct XhciController {
     ///
     /// [`DeviceContext`]: device_context::DeviceContext
     dcbaa: DeviceContextBaseAddressArray,
+    /// The command TRB ring, which software uses to give instructions to the controller
+    command_ring: CommandTrbRing,
     /// The controller's [`Interrupter`]s, which are used to report events to software
     interrupters: Box<[Interrupter]>,
     /// The doorbell registers, which software uses to tell the controller there are TRBs to be processed.
@@ -125,6 +139,26 @@ impl XhciController {
             }
         };
 
+        debug!("{}: Allocating command ring", function.function);
+
+        let command_ring = CommandTrbRing::new();
+
+        operational_registers.write_device_context_base_address_array_pointer(
+            DeviceContextBaseAddressArrayPointer::from_pointer(dcbaa.array_addr()),
+        );
+
+        debug!("{}: Writing command ring pointer", function.function);
+
+        // Check that the command ring isn't running before writing pointer
+        assert!(!operational_registers
+            .read_command_ring_control()
+            .command_ring_running());
+
+        operational_registers.write_command_ring_control(
+            CommandRingControl::new()
+                .with_ring_cycle_state(true)
+                .with_command_ring_pointer(command_ring.ring_start_addr()),
+        );
 
         // SAFETY: This function is only called once per controller
         let interrupters =
@@ -144,6 +178,7 @@ impl XhciController {
             operational_registers,
             runtime_registers,
             dcbaa,
+            command_ring,
             interrupters,
             doorbell_registers,
         };
@@ -165,11 +200,28 @@ impl XhciController {
                 .with_enabled(true),
         );
 
+        debug!("{}: Polling event ring", function.function);
+
+        // Wait for `host_controller_halted` to be unset
+        // TODO: timeout
         loop {
-            for _ in 0..200 {
-                futures::pending!();
+            if !controller
+                .operational_registers
+                .read_usb_status()
+                .host_controller_halted()
+            {
+                break;
             }
 
+            futures::pending!();
+        }
+
+        controller
+            .doorbell_registers
+            .host_controller_doorbell()
+            .ring();
+
+        controller.test_command_ring().await;
 
         loop {
             futures::pending!();
@@ -318,6 +370,80 @@ impl XhciController {
             .collect()
     }
 
+    /// Adds a [`NoOp`] TRB to the control ring and then waits for a response
+    ///
+    /// [`NoOp`]: CommandTrb::NoOp
+    async fn test_command_ring(&mut self) {
+        for _ in 0..CommandTrbRing::TOTAL_LENGTH * 4 {
+            self.test_noop().await.unwrap();
+        }
+    }
+
+    /// Puts a single [`NoOp`] TRB on the command ring and waits for a [`CommandCompletion`] event TRB in response.
+    ///
+    /// [`NoOp`]: CommandTrb::NoOp
+    /// [`CommandCompletion`]: EventTrb::CommandCompletion
+    async fn test_noop(&mut self) -> Result<(), &'static str> {
+        assert!(
+            !self
+                .operational_registers
+                .read_usb_status()
+                .host_controller_halted(),
+            "XHCI controller is not running"
+        );
+        assert!(
+            self.operational_registers.read_usb_command().enabled(),
+            "XHCI controller is not running"
+        );
+
+        // debug!(
+        //     "{}",
+        //     self.operational_registers
+        //         .read_command_ring_control()
+        //         .command_ring_running()
+        // );
+
+        // SAFETY: TODO
+        let trb_addr = unsafe { self.write_command_trb(CommandTrb::NoOp).unwrap() };
+
+        // debug!("Waiting for response");
+
+        // Wait for controller to process TRB
+        for _ in 0..20 {
+            let read_event_trb = self.read_event_trb(0);
+
+            match read_event_trb {
+                None => (),
+                Some(trb) => match trb {
+                    EventTrb::CommandCompletion(trb) => {
+                        if trb.command_trb_pointer != trb_addr {
+                            return Err("CommandCompletion TRB points to wrong command TRB");
+                        }
+
+                        return Ok(());
+                    }
+                    other => debug!("Found other TRB {other:?}"),
+                },
+            }
+
+            futures::pending!();
+        }
+
+        Err("No CommandCompletion TRB found")
+    }
+
+    /// Writes a TRB to the command ring
+    ///
+    /// # Safety
+    /// The caller is responsible for the behaviour of the controller in response to this TRB
+    unsafe fn write_command_trb(&mut self, trb: CommandTrb) -> Result<PhysAddr, RingFullError> {
+        // SAFETY: The caller is responsible for the behaviour of the controller in response to this TRB
+        let trb_addr = unsafe { self.command_ring.enqueue(trb)? };
+
+        self.doorbell_registers.host_controller_doorbell().ring();
+
+        Ok(trb_addr)
+    }
 
     /// Reads an event from the event ring from the `i`th interrupter.
     /// Certain event types will be intercepted and acted on before being returned, such as calling

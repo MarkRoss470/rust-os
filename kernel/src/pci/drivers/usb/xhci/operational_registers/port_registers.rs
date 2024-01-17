@@ -314,9 +314,12 @@ pub enum U1Timeout {
 impl U1Timeout {
     /// Constructs a [`U2Timeout`] from its bit representation
     const fn from_bits(bits: u32) -> Self {
+        #[allow(clippy::cast_possible_truncation)]
+        let bits = bits as u8;
+
         match bits {
             0x00 => Self::Never,
-            0x01..=0x7F => Self::AfterTimeout(bits as _),
+            0x01..=0x7F => Self::AfterTimeout(bits),
             0xFF => Self::AcceptOnly,
             _ => panic!("Invalid U1 timeout value"),
         }
@@ -346,11 +349,13 @@ pub enum U2Timeout {
 impl U2Timeout {
     /// Constructs a [`U1Timeout`] from its bit representation
     const fn from_bits(bits: u32) -> Self {
+        #[allow(clippy::cast_possible_truncation)]
+        let bits = bits as u8;
+
         match bits {
             0x00 => Self::Never,
-            0x01..=0xFE => Self::AfterTimeout(bits as _),
+            0x01..=0xFE => Self::AfterTimeout(bits),
             0xFF => Self::AcceptOnly,
-            _ => unreachable!()
         }
     }
     /// Converts a [`U1Timeout`] into its bit representation
@@ -501,22 +506,22 @@ impl<'a> PortRegister<'a> {
     volatile_getter!(
         PortRegister, PortRegisterFields,
         status_and_control, StatusAndControl,
-        read_status_and_control
+        (pub fn read_status_and_control)
     );
     volatile_getter!(
         PortRegister, PortRegisterFields,
         power_management, PowerManagement,
-        read_power_management
+        (pub fn read_power_management)
     );
     volatile_getter!(
         PortRegister, PortRegisterFields,
         link_info, PortLinkInfo,
-        read_link_info
+        (pub fn read_link_info)
     );
     volatile_getter!(
         PortRegister, PortRegisterFields,
         hardware_lpm_control, PortHardwareLpmControl,
-        read_hardware_lpm_control
+        (pub fn read_hardware_lpm_control)
     );
 }
 
@@ -551,25 +556,25 @@ impl<'a> PortRegisterMut<'a> {
     volatile_accessors!(
         PortRegister, PortRegisterFields,
         status_and_control, StatusAndControl,
-        read_status_and_control, write_status_and_control,
+        (pub fn read_status_and_control), (pub fn write_status_and_control),
         |_|true, |v: &PortRegisterMut|!v.operational_registers.read_usb_status().host_controller_halted()
     );
     volatile_accessors!(
         PortRegister, PortRegisterFields,
         power_management, PowerManagement,
-        read_power_management, write_power_management,
+        (pub fn read_power_management), (pub fn write_power_management),
         |_|true, |v: &PortRegisterMut|!v.operational_registers.read_usb_status().host_controller_halted()
     );
     volatile_accessors!(
         PortRegister, PortRegisterFields,
         link_info, PortLinkInfo,
-        read_link_info, write_link_info,
+        (pub fn read_link_info), (pub fn write_link_info),
         |_|true, |v: &PortRegisterMut|!v.operational_registers.read_usb_status().host_controller_halted()
     );
     volatile_accessors!(
         PortRegister, PortRegisterFields,
         hardware_lpm_control, PortHardwareLpmControl,
-        read_hardware_lpm_control, write_hardware_lpm_control,
+        (pub fn read_hardware_lpm_control), (pub fn write_hardware_lpm_control),
         |_|true, |v: &PortRegisterMut|!v.operational_registers.read_usb_status().host_controller_halted()
     );
 }

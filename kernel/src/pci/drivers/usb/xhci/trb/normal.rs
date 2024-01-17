@@ -1,3 +1,5 @@
+//! The [`NormalTrb`] type
+
 use x86_64::PhysAddr;
 
 use super::TrbType;
@@ -7,7 +9,9 @@ use super::TrbType;
 /// This is either an address for data to be read from or written to, or it is 8 bytes of immediate data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NormalTrbData {
+    /// The data should be read from or written to a memory buffer
     Address(PhysAddr),
+    /// These 8 bytes are the data
     ImmediateData([u8; 8]),
 }
 
@@ -111,25 +115,31 @@ pub struct NormalTrbFlags {
 /// [normal TRB]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A472%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C391%2C0%5D
 #[derive(Debug)]
 pub struct NormalTrb {
+    /// The TRB's data
     data: NormalTrbData,
+    /// Configuration for the TRB
     config: NormalTrbConfig,
+    /// The TRB flags
     flags: NormalTrbFlags,
 }
 
 impl NormalTrb {
-    pub fn new(data: u64, config: u32, flags: u32) -> Self {
-        let flags = NormalTrbFlags::from(flags);
-        let config = NormalTrbConfig::from(config);
-        let data = if flags.immediate_data() {
-            NormalTrbData::ImmediateData(data.to_le_bytes()) // TODO: check endianness
-        } else {
-            NormalTrbData::Address(PhysAddr::new(data))
+    /// Converts the TRB to the data written to a TRB ring
+    pub fn to_parts(&self, cycle: bool) -> [u32; 4] {
+        let data = match self.data {
+            NormalTrbData::Address(addr) => addr.as_u64(),
+            NormalTrbData::ImmediateData(data) => u64::from_le_bytes(data), // TODO: check endianness
         };
 
-        Self {
-            data,
-            config,
-            flags,
-        }
+        let config = self.config.into();
+        let flags = self.flags.with_cycle(cycle).into();
+
+        #[allow(clippy::cast_possible_truncation)]
+        [data as u32, (data >> 32) as u32, config, flags]
+    }
+
+    /// The value of the chain bit
+    pub fn chain(&self) -> bool {
+        self.flags.chain()
     }
 }
