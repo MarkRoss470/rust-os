@@ -1,4 +1,4 @@
-//! The [`CommandCompletionTrb`] type, as well as [`CompletionCode`] 
+//! The [`CommandCompletionTrb`] type, as well as [`CompletionCode`]
 //! and related [`CompletionError`] and [`CompletionCodeStopped`] types.
 
 use x86_64::PhysAddr;
@@ -373,7 +373,7 @@ impl CompletionCode {
 /// * To inform the OS that it can write another TRB in the same place in the [`CommandTrbRing`]
 ///
 /// See the spec section [6.4.2.2] for the definition of this structure.
-/// 
+///
 /// [`CommandTrb`]: super::super::CommandTrb
 /// [`CommandTrbRing`]: super::super::CommandTrbRing
 /// [6.4.2.2]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A486%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C468%2C0%5D
@@ -383,20 +383,20 @@ pub struct CommandCompletionTrb {
     ///
     /// [`CommandTrb`]: super::super::CommandTrb
     pub command_trb_pointer: PhysAddr,
-    
+
     /// An optional piece of data that the controller can give the OS about the execution of the command.
     /// This is specific to the type of [`CommandTrb`].
-    /// 
+    ///
     /// This field is used in [`ConfigureEndpoint`] commands to hold the _Exit Latency Delta_ ([4.6.6.1]).
-    /// 
+    ///
     /// [`CommandTrb`]: super::super::CommandTrb
     /// [`ConfigureEndpoint`]: super::super::CommandTrb::ConfigureEndpoint
     /// [4.6.6.1]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A132%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C164%2C0%5D
     pub command_completion_parameter: u32,
-    
+
     /// The success or error code of the TRB's execution
     pub completion_code: CompletionCode,
-    
+
     /// The TRB's flags
     pub flags: CommandCompletionTrbFlags,
 }

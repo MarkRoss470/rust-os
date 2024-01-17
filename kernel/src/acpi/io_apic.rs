@@ -307,7 +307,7 @@ impl IoApicRegisters {
     ///
     /// TODO: Take [`IoApicInterruptSourceOverride`]s
     /// into account when making this mapping
-    /// 
+    ///
     /// [`IoApicInterruptSourceOverride`]: acpica_bindings::types::tables::madt::MadtRecord::IoApicInterruptSourceOverride
     unsafe fn write_redirection_entry(
         &mut self,

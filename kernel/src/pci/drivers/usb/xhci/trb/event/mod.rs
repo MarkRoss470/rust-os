@@ -7,14 +7,14 @@ use super::{GenericTrbFlags, TrbType};
 pub mod command_completion;
 
 /// An event sent from the controller to the OS on an [`EventTrbRing`]
-/// 
+///
 /// [`EventTrbRing`]: super::event_ring::EventTrbRing
 #[derive(Debug, Clone, Copy)]
 #[allow(clippy::missing_docs_in_private_items)] // TODO: add docs with structs
 pub enum EventTrb {
     Transfer,
     /// A TRB sent to indicate the completion or failure of a [`CommandTrb`].
-    /// 
+    ///
     /// [`CommandTrb`]: super::CommandTrb
     CommandCompletion(CommandCompletionTrb),
     PortStatusChange,
@@ -32,7 +32,9 @@ impl EventTrb {
 
         match generic_flags.trb_type() {
             TrbType::TransferEvent => Self::Transfer,
-            TrbType::CommandCompletionEvent => Self::CommandCompletion(CommandCompletionTrb::new(data)),
+            TrbType::CommandCompletionEvent => {
+                Self::CommandCompletion(CommandCompletionTrb::new(data))
+            }
             TrbType::PortStatusChangeEvent => Self::PortStatusChange,
             TrbType::BandwidthRequestEvent => Self::BandwidthRequest,
             TrbType::DoorbellEvent => Self::Doorbell,

@@ -80,7 +80,7 @@ impl ListNode {
     }
 
     /// Checks that this node and all nodes after it have a reasonable value of `size`
-    /// and the correct relationship to their next node 
+    /// and the correct relationship to their next node
     #[allow(dead_code)]
     pub fn check(&self) {
         // SAFETY: no references exist to list nodes
@@ -95,9 +95,12 @@ impl ListNode {
                 None => return,
                 Some(next_node) => {
                     // Check that this node's allocation ends before the next node
-                    assert!((current_node.get_allocation_end() as usize) <= *next_node as *const ListNode as usize);
+                    assert!(
+                        (current_node.get_allocation_end() as usize)
+                            <= *next_node as *const ListNode as usize
+                    );
                     current_node = next_node
-                },
+                }
             }
         }
     }

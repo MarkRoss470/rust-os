@@ -1,6 +1,6 @@
 //! Types for managing the kernel's global state
 
-use core::sync::atomic::{AtomicUsize, AtomicBool};
+use core::sync::atomic::{AtomicBool, AtomicUsize};
 
 use acpica_bindings::AcpicaOperationFullyInitialized;
 use spin::{Mutex, MutexGuard};

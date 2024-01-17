@@ -60,11 +60,11 @@ impl BootInfoFrameAllocator {
     }
 
     /// Frees pages which were previously allocated using [`allocate_frame`] or [`allocate_consecutive`]
-    /// 
+    ///
     /// # Safety
     /// * `range` must be a page range previously allocated using [`allocate_frame`] or [`allocate_consecutive`]
     /// * The pages must be no longer in use - any pointers mapped into this memory will become invalid
-    /// 
+    ///
     /// [`allocate_frame`]: BootInfoFrameAllocator::allocate_frame
     /// [`allocate_consecutive`]: BootInfoFrameAllocator::allocate_frame
     pub unsafe fn free(&mut self, range: PhysFrameRange) {

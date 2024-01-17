@@ -1,12 +1,13 @@
 //! Code to register a new GDT
 
 use x86_64::{
-    registers::segmentation::{CS, Segment, SS, ES, DS},
+    instructions::tables::load_tss,
+    registers::segmentation::{Segment, CS, DS, ES, SS},
     structures::{
         gdt::{Descriptor, GlobalDescriptorTable},
         tss::TaskStateSegment,
     },
-    VirtAddr, instructions::tables::load_tss,
+    VirtAddr,
 };
 
 /// The size of each stack in bytes
@@ -37,18 +38,20 @@ pub unsafe fn init_gdt() {
     // so no other code can be reading or modifying `TSS` and `GDT` while these references exists
     let (tss, gdt) = unsafe { (&mut TSS, &mut GDT) };
 
-    // SAFETY: Rust code never reads or writes to `INTERRUPTS_STACK`, so the CPU can use it as a stack.
-    tss.interrupt_stack_table[INTERRUPTS_STACK_INDEX as usize] = VirtAddr::from_ptr(unsafe { &INTERRUPTS_STACK }) + STACK_SIZE;
-    // SAFETY: Rust code never reads or writes to `DOUBLE_FAULT_STACK`, so the CPU can use it as a stack.
-    tss.interrupt_stack_table[DOUBLE_FAULT_STACK_INDEX as usize] = VirtAddr::from_ptr(unsafe { &DOUBLE_FAULT_STACK }) + STACK_SIZE;
+    tss.interrupt_stack_table[INTERRUPTS_STACK_INDEX as usize] =
+        // SAFETY: Rust code never reads or writes to `INTERRUPTS_STACK`, so the CPU can use it as a stack.
+        VirtAddr::from_ptr(unsafe { &INTERRUPTS_STACK }) + STACK_SIZE;
+    tss.interrupt_stack_table[DOUBLE_FAULT_STACK_INDEX as usize] =
+        // SAFETY: Rust code never reads or writes to `DOUBLE_FAULT_STACK`, so the CPU can use it as a stack.
+        VirtAddr::from_ptr(unsafe { &DOUBLE_FAULT_STACK }) + STACK_SIZE;
 
     let code_segment = gdt.add_entry(Descriptor::kernel_code_segment());
     let data_segment = gdt.add_entry(Descriptor::kernel_data_segment());
     let tss_segment = gdt.add_entry(Descriptor::tss_segment(tss));
     gdt.load();
-    
+
     // SAFETY: The constructed TSS is valid
-    unsafe {  
+    unsafe {
         load_tss(tss_segment);
     }
 

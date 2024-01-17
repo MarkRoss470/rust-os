@@ -11,7 +11,7 @@ pub struct LinkTrbConfig {
 
     /// The interrupter to send a [`CommandCompletionTrb`] to when the TRB is processed.
     /// An interrupt is only sent if [`interrupt_on_completion`] is `true`
-    /// 
+    ///
     /// [`CommandCompletionTrb`]: super::event::command_completion::CommandCompletionTrb
     /// [`interrupt_on_completion`]: LinkTrbFlags::interrupt_on_completion
     #[bits(10)]
@@ -31,7 +31,7 @@ pub struct LinkTrbFlags {
     /// Whether the next TRB is part of the same TD
     pub chain: bool,
     /// Whether an interrupt should be sent to the interrupter indicated by [`interrupter_target`] when the TRB is completed
-    /// 
+    ///
     /// [`interrupter_target`]: LinkTrbConfig::interrupter_target
     pub interrupt_on_completion: bool,
 
@@ -47,10 +47,10 @@ pub struct LinkTrbFlags {
 
 /// A TRB on a [control] or transfer (TODO: link) TRB ring which indicates the end of a segment of the ring.
 /// The TRB also contains the [`toggle_cycle`] flag, which tells whether controller to switch its cycle state.
-/// This is so that the controller doesn't have to overwrite TRBs after it reads them - TRBs which were written 
+/// This is so that the controller doesn't have to overwrite TRBs after it reads them - TRBs which were written
 /// on the first pass around the ring will not be read on the controller's next pass because the cycle bit will not match
 /// the controller's cycle state.
-/// 
+///
 /// [Control]: super::command_ring::CommandTrbRing
 /// [`toggle_cycle`]: LinkTrbFlags::cycle
 #[derive(Debug)]
@@ -76,7 +76,7 @@ impl LinkTrb {
         [pointer as u32, (pointer >> 32) as u32, config, flags]
     }
 
-    /// Constructs 
+    /// Constructs
     pub fn new(addr: PhysAddr, cycle: bool, toggle_cycle: bool, chain: bool) -> Self {
         Self {
             pointer: addr,

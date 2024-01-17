@@ -286,7 +286,7 @@ extern "x86-interrupt" fn unknown_interrupt<const N: u8>(_: InterruptStackFrame)
     }
 
     inner(N);
-    
+
     // SAFETY:
     // This function is a hardware interrupt handler, so it must tell the interrupt controller that the handler has completed before exiting.
     unsafe {

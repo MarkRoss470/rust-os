@@ -3,7 +3,8 @@
 use super::{
     bar::Bar,
     classcodes::{ClassCode, InvalidValueError},
-    devices::PciFunction, split_to_u16, split_to_u8, PciMappedFunction,
+    devices::PciFunction,
+    split_to_u16, split_to_u8, PciMappedFunction,
 };
 
 /// The vendor:device code of a particular PCI device
@@ -174,14 +175,14 @@ pub struct PciGeneralDeviceHeader {
 
     /// Points (TODO: how) to the Card Information Structure.
     pub cardbus_cis_pointer: u32,
-    /// For PCI expansion cards, these fields are used to uniquely identify the board 
+    /// For PCI expansion cards, these fields are used to uniquely identify the board
     /// (as opposed to [`device_code`], which identifies the PCI controller)
-    /// 
+    ///
     /// [`device_code`]: PciHeader::device_code
     pub subsystem_device_code: PciDeviceId,
     /// A field indicating the physical address of expansion ROM.
     /// See the [PCI spec 2.2] section 6.2.5.2 for more info.
-    /// 
+    ///
     /// [PCI spec 2.2]: https://ics.uci.edu/~harris/ics216/pci/PCI_22.pdf
     pub expansion_rom_base_address: u32,
     /// A pointer into this device's configuration space, pointing to a linked list of the device's capabilities
@@ -421,8 +422,6 @@ pub struct PciHeader {
     /// The header type, containing more specific fields
     pub header_type: HeaderType,
 }
-
-
 
 impl PciHeader {
     /// Constructs a [`PciHeader`] from the PCI registers which make it up.

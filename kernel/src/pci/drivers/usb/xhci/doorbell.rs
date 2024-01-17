@@ -39,11 +39,11 @@ impl DoorbellTarget {
             Self::OutEndpoint(ep) => {
                 debug_assert!(ep != 1 && ep <= 15);
                 ep * 2
-            },
+            }
             Self::InEndpoint(ep) => {
                 debug_assert!(ep != 1 && ep <= 15);
                 ep * 2 + 1
-            },
+            }
             Self::Reserved(v) => {
                 debug_assert!(v == 0 || (v >= 32 && v <= 247));
                 v
@@ -124,7 +124,7 @@ impl DoorbellRegisters {
     }
 }
 
-/// The host controller doorbell. This is the first doorbell and a write to it indicates that 
+/// The host controller doorbell. This is the first doorbell and a write to it indicates that
 /// there is a TRB to be processed in the command ring.
 #[derive(Debug)]
 pub struct HostControllerDoorbell<'a>(*mut u32, PhantomData<&'a mut u32>);

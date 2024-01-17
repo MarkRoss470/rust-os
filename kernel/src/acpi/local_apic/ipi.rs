@@ -1,5 +1,5 @@
 //! Data structures used to trigger an _Inter-Processor Interrupt_ (IPI)
-//! 
+//!
 //! The key here is the [`InterruptCommandRegister`] of the LAPIC - writing to this register triggers an IPI.
 
 /// How an IPI is delivered.

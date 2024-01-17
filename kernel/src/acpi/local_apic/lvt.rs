@@ -119,7 +119,7 @@ pub struct LvtRegisters {
     pub input_pin_polarity: InterruptActiveState,
 
     /// Whether the interrupt is currently being processed (read only, LINT0 and LINT1 registers only)
-    /// 
+    ///
     /// For fixed mode, level-triggered interrupts; this flag is set when the local APIC accepts the
     /// interrupt for servicing and is reset when an EOI command is received from the processor. The
     /// meaning of this flag is undefined for edge-triggered interrupts and other delivery modes.

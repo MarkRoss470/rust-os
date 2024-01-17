@@ -80,7 +80,7 @@ impl FrameBufferController {
     }
 
     /// Draws an 8x8 pixel bitmap into the buffer with the top-left corner at (`start_x`, `start_y`).
-    /// 
+    ///
     /// Each row of the bitmap is one byte in the input array, and one pixel is one bit within the byte
     /// (LSB = left, MSB = right, 1 = `front`, 0 = `back`).
     #[inline]

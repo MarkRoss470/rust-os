@@ -7,7 +7,7 @@ use crate::pci::{PciMappedFunction, PcieMappedRegisters};
 use super::{MsiControl, X64MsiAddress};
 
 /// A mutable view into the MSI capability of a PCI device. If mutability is not needed, use [`MessageSignalledInterruptsCapability`].
-/// 
+///
 /// [`MessageSignalledInterruptsCapability`]: super::msi_const::MessageSignalledInterruptsCapability
 #[derive(Debug)]
 pub struct MessageSignalledInterruptsCapabilityMut<'a> {
@@ -52,13 +52,13 @@ impl<'a> MessageSignalledInterruptsCapabilityMut<'a> {
         };
 
         let offset_for_64_bit = if is_64_bit { 4 } else { 0 };
-        
+
         // SAFETY: The message address low register is at offset 4 in the MSI capabilities structure
-        let message_address_low = unsafe {capability_start_ptr.add(4).cast()};
+        let message_address_low = unsafe { capability_start_ptr.add(4).cast() };
 
         // SAFETY: The data register is at offset 8 in the MSI capabilities structure
-        let data = unsafe {capability_start_ptr.add(12 + offset_for_64_bit).cast()};
-        
+        let data = unsafe { capability_start_ptr.add(12 + offset_for_64_bit).cast() };
+
         Self {
             control: control_ptr,
             message_address_low,
@@ -70,7 +70,7 @@ impl<'a> MessageSignalledInterruptsCapabilityMut<'a> {
     }
 
     /// Reads the [`control`] register
-    /// 
+    ///
     /// [`control`]: MessageSignalledInterruptsCapabilityMut::control
     pub fn control(&self) -> MsiControl {
         // SAFETY: It's unsound to create a reference in to a `PcieMappedRegisters`, so no references exist for this data
@@ -78,7 +78,7 @@ impl<'a> MessageSignalledInterruptsCapabilityMut<'a> {
     }
 
     /// Writes the [`control`] register
-    /// 
+    ///
     /// [`control`]: MessageSignalledInterruptsCapabilityMut::control
     pub fn write_control(&mut self, control: MsiControl) {
         // SAFETY: It's unsound to create a reference in to a `PcieMappedRegisters`, so no references exist for this data
@@ -128,7 +128,7 @@ impl<'a> MessageSignalledInterruptsCapabilityMut<'a> {
     }
 
     /// Reads the [`data`] register
-    /// 
+    ///
     /// [`data`]: MessageSignalledInterruptsCapabilityMut::data
     pub fn data(&self) -> u16 {
         // SAFETY: It's unsound to create a reference in to a `PcieMappedRegisters`, so no references exist for this data
@@ -136,7 +136,7 @@ impl<'a> MessageSignalledInterruptsCapabilityMut<'a> {
     }
 
     /// Writes to the [`data`] register
-    /// 
+    ///
     /// [`data`]: MessageSignalledInterruptsCapabilityMut::data
     pub fn write_data(&mut self, data: u16) {
         // SAFETY: It's unsound to create a reference in to a `PcieMappedRegisters`, so no references exist for this data

@@ -284,7 +284,7 @@ impl PciCache {
     fn functions(&self) -> impl Iterator<Item = &PciMappedFunction> {
         self.segments.iter().flat_map(|b| b.functions())
     }
-    
+
     /// Gets an iterator over mutable references to the functions in the cache
     fn functions_mut(&mut self) -> impl Iterator<Item = &mut PciMappedFunction> {
         self.segments.iter_mut().flat_map(|b| b.functions_mut())
@@ -519,12 +519,6 @@ pub unsafe fn init(mcfg: Mcfg) {
             Task::register(task);
         }
     }
-
-    drop(lock);
-
-    lspci(&[]);
-
-    // println!("{:#?}", *PCI_CACHE.lock());
 }
 
 /// Gets a pointer into the PCIe configuration space of the given PCI device

@@ -17,7 +17,7 @@ pub struct EventTrbRing {
     /// As the event ring is written by the controller, link TRBs can't be used to set the structure of the ring
     /// like for the command and transfer rings. Instead, a secondary table is used which stores the addresses
     /// and lengths of ring segments.
-    /// 
+    ///
     /// See [`EventRingSegmentTableEntry`].
     segment_table: PageBox,
 
@@ -58,10 +58,10 @@ impl EventTrbRing {
         }
     }
 
-    /// Reads a TRB from the ring, if one is present. Also returns the 
-    /// 
+    /// Reads a TRB from the ring, if one is present. Also returns the
+    ///
     /// # Safety
-    /// This method does _not_ update the controller's dequeue pointer. 
+    /// This method does _not_ update the controller's dequeue pointer.
     /// The caller must make sure the pointer is updated if this method returns `Some`,
     /// or else the controller will not be able to issue a new TRB in the location this one was read.
     pub unsafe fn dequeue(&mut self) -> Option<(EventTrb, PhysAddr)> {
@@ -84,7 +84,10 @@ impl EventTrbRing {
                 self.cycle_state = !self.cycle_state;
             }
 
-            Some((EventTrb::new(raw), self.ring_start_addr() + (self.dequeue * 16)))
+            Some((
+                EventTrb::new(raw),
+                self.ring_start_addr() + (self.dequeue * 16),
+            ))
         } else {
             None
         }

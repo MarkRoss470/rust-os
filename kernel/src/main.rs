@@ -86,7 +86,10 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 
     let stack_pointer_approx = info as *const _ as usize;
 
-    println!("Current stack pointer is approximately {:#x}", stack_pointer_approx);
+    println!(
+        "Current stack pointer is approximately {:#x}",
+        stack_pointer_approx
+    );
     println!("In stack {:?}", cpu::gdt::get_stack(stack_pointer_approx));
 
     flush();

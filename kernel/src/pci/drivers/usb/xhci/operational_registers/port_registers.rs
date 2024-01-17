@@ -306,7 +306,7 @@ pub enum U1Timeout {
     Never,
     /// The controller will start a transition to U1 after this many microseconds of inactivity
     AfterTimeout(u8),
-    /// The controller will not start a transition to U1 but will accept attempts 
+    /// The controller will not start a transition to U1 but will accept attempts
     /// by the connected device to transition to U1.
     AcceptOnly,
 }
@@ -341,7 +341,7 @@ pub enum U2Timeout {
     Never,
     /// The controller will start a transition to U2 after this many multiples of 256 microseconds of inactivity
     AfterTimeout(u8),
-    /// The controller will not start a transition to U2 but will accept attempts 
+    /// The controller will not start a transition to U2 but will accept attempts
     /// by the connected device to transition to U2.
     AcceptOnly,
 }
@@ -375,19 +375,19 @@ impl U2Timeout {
 /// [5.4.9]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A422%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C671%2C0%5D
 #[bitfield(u32)]
 pub struct PowerManagement {
-    /// If the connection is in the U0 state, this field defines under what conditions the controller will 
+    /// If the connection is in the U0 state, this field defines under what conditions the controller will
     /// initiate or accept transitions to the U1 state.
     #[bits(8)]
     pub u1_timeout: U1Timeout,
 
-    /// If the connection is in the U0 state, this field defines under what conditions the controller will 
+    /// If the connection is in the U0 state, this field defines under what conditions the controller will
     /// initiate or accept transitions to the U2 state.
     #[bits(8)]
     pub u2_timeout: U2Timeout,
 
-    /// Writes to this field cause the controller to generate a _Set Link Function LMP_ with the 
+    /// Writes to this field cause the controller to generate a _Set Link Function LMP_ with the
     /// Force_LinkPM_Accept field in the written state. This field should only be used for testing and should
-    /// not be written to if there are pending packets at the link level. 
+    /// not be written to if there are pending packets at the link level.
     /// This field has no effect if [`port_power`][StatusAndControl::port_power] is `false`.
     pub force_link_pm_accept: bool,
 
@@ -397,9 +397,9 @@ pub struct PowerManagement {
 }
 
 /// The _Port Link Info Register_ of a USB 3 port.
-/// 
+///
 /// See the spec section [5.4.10] for more info.
-/// 
+///
 /// [5.4.10]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A425%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C279%2C0%5D
 #[bitfield(u32)]
 pub struct PortLinkInfo {
@@ -407,12 +407,12 @@ pub struct PortLinkInfo {
     /// In this case, an error is a transition from the U0 to Recovery state.
     error_count: u16,
 
-    /// The number of receive lanes negotiated by the port, minus 1. 
+    /// The number of receive lanes negotiated by the port, minus 1.
     /// This field is only valid if [`device_connected`][StatusAndControl::device_connected] is `true`.
     #[bits(4)]
     receive_lane_count: u8,
 
-    /// The number of transmit lanes negotiated by the port, minus 1. 
+    /// The number of transmit lanes negotiated by the port, minus 1.
     /// This field is only valid if [`device_connected`][StatusAndControl::device_connected] is `true`.
     #[bits(4)]
     transmit_lane_count: u8,
@@ -420,20 +420,19 @@ pub struct PortLinkInfo {
     #[doc(hidden)]
     #[bits(8)]
     reserved0: u32,
-
 }
 
 /// The _Port Hardware LPM Control Register_ of a USB 3 port.
-/// 
+///
 /// See the spec section [5.4.11] for more info.
-/// 
+///
 /// [5.4.11]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A426%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C232%2C0%5D
 #[bitfield(u32)]
 pub struct PortHardwareLpmControl {
     /// The number of soft link errors detected by the port. This is reset to 0 if the controller or port is reset.
-    /// In this case, an error is defined by section 7.3.3.2 of the USB 3.2 specification revision 1.1, 
+    /// In this case, an error is defined by section 7.3.3.2 of the USB 3.2 specification revision 1.1,
     /// which includes the following:
-    /// 
+    ///
     /// * Single-bit error in the block header.
     /// * CRC-5 or CRC-16 or CRC-32 error.
     /// * Single symbol framing error.
@@ -444,7 +443,7 @@ pub struct PortHardwareLpmControl {
 
     #[doc(hidden)]
     #[bits(16)]
-    reserved0: u32
+    reserved0: u32,
 }
 
 /// The registers representing a port on the controller
@@ -453,16 +452,16 @@ pub struct PortHardwareLpmControl {
 pub struct PortRegisterFields {
     /// Information about the power and connection status of a port.
     status_and_control: StatusAndControl,
-    
+
     /// Controls the power management of the port
     power_management: PowerManagement,
-    
+
     /// Information about the link state.
     /// This field is only valid if the port is USB 3, and is reserved otherwise.
     link_info: PortLinkInfo,
 
     /// Information about soft errors in the link.
-    /// This field is only valid if the port is USB 3 and the controller supports 
+    /// This field is only valid if the port is USB 3 and the controller supports
     /// link soft errors (LSECC = 1, TODO: link), and is reserved otherwise.
     hardware_lpm_control: PortHardwareLpmControl,
 }

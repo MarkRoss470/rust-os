@@ -9,7 +9,9 @@ pub mod interrupt_controllers;
 pub mod ps2;
 
 pub use frame_allocator::BootInfoFrameAllocator;
-pub use idt::{register_interrupt_callback, remove_interrupt_callback, CallbackAddError, CallbackRemoveError};
+pub use idt::{
+    register_interrupt_callback, remove_interrupt_callback, CallbackAddError, CallbackRemoveError,
+};
 
 use bootloader_api::info::MemoryRegions;
 use core::arch::asm;

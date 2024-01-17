@@ -196,7 +196,7 @@ impl Ps2Controller8042 {
     /// This will cause the devices to stop reporting data.
     /// The caller must ensure that either the controller is re-enabled or that no other
     /// code is relying on the data.
-    /// 
+    ///
     /// [`DisablePrimaryPort`]: Ps2ControllerCommand::DisablePrimaryPort
     /// [`DisableSecondaryPort`]: Ps2ControllerCommand::DisableSecondaryPort
     unsafe fn disable(&mut self) -> Result<(), Ps2ControllerInitialisationError> {
@@ -427,7 +427,7 @@ impl Ps2Ports {
     /// Tests a component of the controller using a given test command.
     /// The output is compared with 0x55 and a [`PortTestFailed`]
     /// is returned if the result does not match.
-    /// 
+    ///
     /// [`PortTestFailed`]: Ps2ControllerInitialisationError::PortTestFailed
     unsafe fn send_test_command(
         &mut self,
@@ -464,7 +464,7 @@ impl Ps2Ports {
     /// # Safety
     /// This command might reset the controller depending on what model it is, so this method should not
     /// be called while the controller is in operation.
-    /// 
+    ///
     /// [`TestController`]: Ps2ControllerCommand::TestController
     unsafe fn test_controller(&mut self) -> Result<(), Ps2ControllerInitialisationError> {
         // SAFETY: The safety of this operation is the caller's responsibility
@@ -542,7 +542,7 @@ impl Ps2Ports {
     /// # Safety
     /// This command might reset the controller depending on what model it is, so this method should not
     /// be called while the controller is in operation.
-    /// 
+    ///
     /// [`TestPrimaryPort`]: Ps2ControllerCommand::TestPrimaryPort
     unsafe fn test_port(&mut self, port: Ps2Port) -> Result<(), Ps2ControllerInitialisationError> {
         // SAFETY: The safety of this operation is the caller's responsibility
@@ -733,7 +733,7 @@ enum Ps2ControllerCommand {
     /// The parameter is a bit flag for which lines are pulsed.
     /// Bit 0 is the reset line, and bits 1 to 3 are other lines with non-standard functions.
     /// To pulse just the reset line, use [`PULSE_RESET_LINE`]
-    /// 
+    ///
     /// [`PULSE_RESET_LINE`]: Ps2ControllerCommand::PULSE_RESET_LINE
     PulseOutputLine(u8),
 }

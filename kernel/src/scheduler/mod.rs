@@ -25,7 +25,7 @@ impl Task {
     where
         T: Future<Output = ()> + 'static,
     {
-        // The `TASKS` vector is used in the timer interrupt handler, 
+        // The `TASKS` vector is used in the timer interrupt handler,
         // so disable interrupts while modifying it to avoid deadlock
         without_interrupts(|| {
             TASKS.lock().push(Self(Box::pin(t)));

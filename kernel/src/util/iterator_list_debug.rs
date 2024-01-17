@@ -1,6 +1,6 @@
 //! Contains the [`IteratorListDebug`] struct for printing out iterators
 
-use core::{fmt::Debug, cell::RefCell};
+use core::{cell::RefCell, fmt::Debug};
 
 /// What formatter the [`Debug`] impl of [`IteratorListDebug`] will pass to each element
 enum Format {
@@ -14,23 +14,23 @@ enum Format {
 
 /// A utility struct for implementing [`Debug`] for an iterator such that it prints out all the values in a list format,
 /// without allocating.
-/// 
+///
 /// ```
 /// let iter = 0..10;
 /// println!("{:?}", iter); // Prints "0..10"
 /// println!("{:?}", IteratorListDebug::new(iter)); // Prints "[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]"
-/// 
+///
 /// ```
-/// 
+///
 /// If constructed with the [`new`] method, the formatter given to the [`Debug`]
 /// implementation will be passed on to each element, however if [`new_with_default_formatting`]
 /// or [`new_with_alternate_formatting`] are used then a new formatter is created with the given attributes.
 /// This can be used to make the output more compact, such as forcing the elements to print on one line each.
-/// 
+///
 /// [`new`]: [IteratorListDebug::new]
 /// [`new_with_default_formatting`]: [IteratorListDebug::new_with_default_formatting]
 /// [`new_with_alternate_formatting`]: [IteratorListDebug::new_with_alternate_formatting]
-/// 
+///
 pub struct IteratorListDebug<T, U>
 where
     T: Debug,
@@ -51,14 +51,20 @@ where
     /// Wraps the iterator in an [`IteratorListDebug`].
     /// The implementation of [`Debug`] will pass through formatting arguments.
     pub fn new(iterator: U) -> Self {
-        Self { iterator: RefCell::new(iterator), format: Format::PassThrough }
+        Self {
+            iterator: RefCell::new(iterator),
+            format: Format::PassThrough,
+        }
     }
 
     /// Wraps the iterator in an [`IteratorListDebug`].
     /// The implementation of [`Debug`] will always use the default debug format when debugging an item
     /// (i.e. `format_args!("{item:?}")`).
     pub fn new_with_default_formatting(iterator: U) -> Self {
-        Self { iterator: RefCell::new(iterator), format: Format::DefaultDebug }
+        Self {
+            iterator: RefCell::new(iterator),
+            format: Format::DefaultDebug,
+        }
     }
 
     /// Wraps the iterator in an [`IteratorListDebug`].
@@ -66,7 +72,10 @@ where
     /// (i.e. `format_args!("{item:#?}")`).
     /// For types whose [`Debug`] impls are macro derived, this usually means pretty printing the argument.
     pub fn new_with_alternate_formatting(iterator: U) -> Self {
-        Self { iterator: RefCell::new(iterator), format: Format::AlternateDebug }
+        Self {
+            iterator: RefCell::new(iterator),
+            format: Format::AlternateDebug,
+        }
     }
 }
 
@@ -83,9 +92,7 @@ where
             match self.format {
                 Format::PassThrough => l.entry(&entry),
                 Format::DefaultDebug => l.entry(&format_args!("{entry:?}")),
-                Format::AlternateDebug => {
-                    l.entry(&format_args!("{entry:#?}"))
-                },
+                Format::AlternateDebug => l.entry(&format_args!("{entry:#?}")),
             };
         }
 

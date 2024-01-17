@@ -15,7 +15,7 @@ use super::{
 
 /// The _Device Context Base Address Array_ (DCBAA) data structure is used to
 /// associate an xHCI _Device Slot_ with its respective [`DeviceContext`] data structure.
-/// The DCBAA entry associated with each allocated _Device Slot_ 
+/// The DCBAA entry associated with each allocated _Device Slot_
 /// contains a 64-bit pointer to the base of the associated [`DeviceContext`].
 ///
 /// The DCBAA is 64-byte aligned and may not span page boundaries.

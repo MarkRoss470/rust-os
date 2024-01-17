@@ -6,9 +6,9 @@ pub mod xhci;
 
 /// A USB route string. This uniquely identifies a connected USB device on a root port by which port it is plugged into on a hub,
 /// which port that hub is plugged into, etc.
-/// 
+///
 /// This data structure is defined in section 8.9 of the [USB3 specification].
-/// 
+///
 /// [USB3 specification]: https://www.usb.org/document-library/usb-32-revision-11-june-2022
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct RouteString(u32);
@@ -16,9 +16,9 @@ struct RouteString(u32);
 impl RouteString {
     /// Gets the offset at the given `tier`. The `tier` is 1-based and doesn't include the root hub.
     /// For example, a `tier` value of 1 will return the port number on the hub directly connected to the root hub.
-    /// 
+    ///
     /// The return value is always in the range `0..=15`
-    /// 
+    ///
     /// # Panics
     /// * If `tier == 0`
     /// * If `tier > 5`

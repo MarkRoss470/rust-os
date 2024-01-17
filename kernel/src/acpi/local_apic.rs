@@ -9,9 +9,12 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
-use crate::{global_state::KERNEL_STATE, println, acpi::local_apic::lvt::LvtRegisters};
+use crate::{acpi::local_apic::lvt::LvtRegisters, global_state::KERNEL_STATE, println};
 
-use self::{ipi::{DeliveryMode, DestinationMode, DestinationShorthand, InterruptCommandRegister}, lvt::TimerMode};
+use self::{
+    ipi::{DeliveryMode, DestinationMode, DestinationShorthand, InterruptCommandRegister},
+    lvt::TimerMode,
+};
 
 #[bitfield(u32)]
 struct TaskPriorityRegister {

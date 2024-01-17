@@ -11,7 +11,11 @@ pub struct InvalidValueError {
 
 impl core::fmt::Display for InvalidValueError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "Invalid value 0x{:x} for field '{}'", self.value, self.field)
+        write!(
+            f,
+            "Invalid value 0x{:x} for field '{}'",
+            self.value, self.field
+        )
     }
 }
 
@@ -30,7 +34,10 @@ impl UnclassifiedDeviceType {
         match subclass {
             0x00 => Ok(Self::NonVgaCompatible),
             0x01 => Ok(Self::VgaCompatible),
-            _ => Err(InvalidValueError { value: subclass, field: "Unclassified device subclass" })
+            _ => Err(InvalidValueError {
+                value: subclass,
+                field: "Unclassified device subclass",
+            }),
         }
     }
 }
@@ -40,7 +47,7 @@ impl UnclassifiedDeviceType {
 pub enum MassStorageControllerType {
     /// An SCSI bus controller
     SCSIBusController,
-    /// An IDE controller 
+    /// An IDE controller
     IDEController,
     /// A floppy disk controller
     FloppyDiskController,
@@ -54,7 +61,7 @@ pub enum MassStorageControllerType {
     SerialATAController,
     /// A serial attached SCSI controller
     SerialAttachedSCSIController,
-    /// A non volatile memory (including NVME) controller 
+    /// A non volatile memory (including NVME) controller
     NonVolatileMemoryController,
     /// A different type of storage controller
     Other,
@@ -74,7 +81,10 @@ impl MassStorageControllerType {
             0x07 => Ok(Self::SerialAttachedSCSIController),
             0x08 => Ok(Self::NonVolatileMemoryController),
             0x80 => Ok(Self::Other),
-            _ => Err(InvalidValueError { value: subclass, field: "Unclassified device subclass" })
+            _ => Err(InvalidValueError {
+                value: subclass,
+                field: "Unclassified device subclass",
+            }),
         }
     }
 }
@@ -106,7 +116,10 @@ impl USBControllerType {
             0x30 => Ok(USBControllerType::Xhci),
             0x80 => Ok(USBControllerType::Unspecified),
             0xFE => Ok(USBControllerType::Device),
-            _ => Err(InvalidValueError { value: prog_if, field: "USB " })
+            _ => Err(InvalidValueError {
+                value: prog_if,
+                field: "USB ",
+            }),
         }
     }
 }
@@ -145,7 +158,9 @@ impl SerialBusControllerType {
             0x00 => Ok(Self::FireWireController),
             0x01 => Ok(Self::AccessBusController),
             0x02 => Ok(Self::Ssa),
-            0x03 => Ok(Self::UsbController(USBControllerType::from_prog_if(prog_if)?)),
+            0x03 => Ok(Self::UsbController(USBControllerType::from_prog_if(
+                prog_if,
+            )?)),
             0x04 => Ok(Self::FibreChannel),
             0x05 => Ok(Self::SMBusController),
             0x06 => Ok(Self::InfiniBandController),
@@ -153,20 +168,21 @@ impl SerialBusControllerType {
             0x08 => Ok(Self::SercosInterface),
             0x09 => Ok(Self::CanBusController),
             0x80 => Ok(Self::Other),
-            _ => Err(InvalidValueError { value: subclass, field: "Serial bus controller type" })
+            _ => Err(InvalidValueError {
+                value: subclass,
+                field: "Serial bus controller type",
+            }),
         }
     }
 }
-
-
 
 /// A general function performed by a PCI device
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClassCode {
     /// 0x00
-    Unclassified (UnclassifiedDeviceType),
+    Unclassified(UnclassifiedDeviceType),
     /// 0x01
-    MassStorageController (MassStorageControllerType),
+    MassStorageController(MassStorageControllerType),
     /// 0x02
     NetworkController,
     /// 0x03
@@ -203,7 +219,7 @@ pub enum ClassCode {
     ProcessingAccelerator,
     /// 0x13
     NonEssentialInstrumentation,
-    
+
     /// 0x40
     CoProcessor,
 
@@ -215,8 +231,12 @@ impl ClassCode {
     /// Construct a [`ClassCode`] from its `class_code`, `subclass`, and `prog_if`
     pub fn new(class_code: u8, subclass: u8, prog_if: u8) -> Result<Self, InvalidValueError> {
         match class_code {
-            0x00 => Ok(Self::Unclassified (UnclassifiedDeviceType::from_subclass(subclass)?)),
-            0x01 => Ok(Self::MassStorageController(MassStorageControllerType::from_subclass(subclass, prog_if)?)),
+            0x00 => Ok(Self::Unclassified(UnclassifiedDeviceType::from_subclass(
+                subclass,
+            )?)),
+            0x01 => Ok(Self::MassStorageController(
+                MassStorageControllerType::from_subclass(subclass, prog_if)?,
+            )),
             0x02 => Ok(Self::NetworkController),
             0x03 => Ok(Self::DisplayController),
             0x04 => Ok(Self::MultimediaController),
@@ -227,7 +247,9 @@ impl ClassCode {
             0x09 => Ok(Self::InputDeviceController),
             0x0A => Ok(Self::DockingStation),
             0x0B => Ok(Self::Processor),
-            0x0C => Ok(Self::SerialBusController(SerialBusControllerType::from_subclass(subclass, prog_if)?)),
+            0x0C => Ok(Self::SerialBusController(
+                SerialBusControllerType::from_subclass(subclass, prog_if)?,
+            )),
             0x0D => Ok(Self::WirelessController),
             0x0E => Ok(Self::IntelligentController),
             0x0F => Ok(Self::SatelliteCommunicationController),
@@ -235,11 +257,14 @@ impl ClassCode {
             0x11 => Ok(Self::SignalProcessingController),
             0x12 => Ok(Self::ProcessingAccelerator),
             0x13 => Ok(Self::NonEssentialInstrumentation),
-            
+
             0x40 => Ok(Self::CoProcessor),
             0xFF => Ok(Self::Unassigned),
 
-            _ => Err(InvalidValueError { value: class_code, field: "Class code" })
+            _ => Err(InvalidValueError {
+                value: class_code,
+                field: "Class code",
+            }),
         }
     }
 }

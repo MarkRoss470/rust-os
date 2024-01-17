@@ -1,10 +1,10 @@
 //! Functionality to read the capability registers of PCI devices
-//! 
+//!
 //! The capability registers of a PCI device are a linked list of data structures in a device's configuration space.
 //! Each item contains the type of capability, the pointer to the next item, and then other registers specific to the capability.
 #![allow(dead_code)] // TODO: remove when the warnings are better
 
-// TODO: deduplicate all these modules 
+// TODO: deduplicate all these modules
 pub mod capability_const;
 pub mod capability_mut;
 pub mod msi_const;
@@ -123,7 +123,7 @@ pub struct X64MsiAddress {
     /// In logical mode, [`apic_id`] is a message destination address which then gets mapped to an APIC ID.
     ///
     /// TODO: look into this - I think it's only needed for virtualisation or for systems with more than 255 cores.
-    /// 
+    ///
     /// [`apic_id`]: X64MsiAddress::apic_id
     pub destination_is_logical: bool,
 

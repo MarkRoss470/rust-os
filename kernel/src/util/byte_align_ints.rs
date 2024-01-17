@@ -8,7 +8,6 @@ macro_rules! byte_align_int {
         $type_name: ident, $num_bytes: literal, $wrapped_type: ty,
         $from_method_name: ident, $to_method_name: ident
     ) => {
-
         /// A type which stores a [`
         #[doc = stringify!($wrapped_type)]
         /// `] in little-endian format, but has an align of 1.

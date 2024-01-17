@@ -9,7 +9,7 @@ use x86_64::structures::paging::{
 use x86_64::VirtAddr;
 
 use crate::global_state::{GlobalState, GlobalStateLock};
-use crate::{KERNEL_STATE, println};
+use crate::{println, KERNEL_STATE};
 
 use super::align_up;
 use super::list_node::ListNode;
@@ -190,13 +190,12 @@ unsafe fn align_next(
         // Save `node.next` to later set it on the new node
         // This preserves the ordering of the list
         let next_node = node.next.take();
-        
+
         let allocation_end = node.get_allocation_end() as usize;
-        
+
         if let Some(n) = &next_node {
             debug_assert!(*n as *const ListNode as usize >= allocation_end);
         }
-
 
         // SAFETY:
         // This size is always smaller than the previous size, so the memory is mapped.
@@ -350,11 +349,19 @@ impl LinkedListAllocator {
                 let start_frame = ((new_node_ptr as usize) - self.heap_start) / 4096;
                 let allocation_end = (new_node_ptr as usize + ListNode::OFFSET) + size;
                 let end_frame = (allocation_end - self.heap_start) / 4096;
-                
-                map_frames(self.heap_start, self.max_size, start_frame, end_frame - start_frame + 1)?;
+
+                map_frames(
+                    self.heap_start,
+                    self.max_size,
+                    start_frame,
+                    end_frame - start_frame + 1,
+                )?;
 
                 // Double check that the new pointer is properly aligned and doesn't overlap with the previous allocation
-                assert_eq!(new_node_ptr as usize, align_up(new_node_ptr as usize, ListNode::ALIGN));
+                assert_eq!(
+                    new_node_ptr as usize,
+                    align_up(new_node_ptr as usize, ListNode::ALIGN)
+                );
                 assert!(new_node_ptr as usize >= current_allocation_end);
 
                 // Write a new `ListNode`
@@ -362,7 +369,9 @@ impl LinkedListAllocator {
                 // The backing memory for this write was just allocated with map_frames.
                 // Nothing else can be using the memory because it is after the previous allocation
                 // (This, and proper alignment, are checked with the above asserts, which should never fail)
-                unsafe { core::ptr::write(new_node_ptr, ListNode::new(size, true, None)); }
+                unsafe {
+                    core::ptr::write(new_node_ptr, ListNode::new(size, true, None));
+                }
 
                 // Convert `new_node_ptr` to a reference rather than a pointer
                 // SAFETY:
@@ -371,7 +380,7 @@ impl LinkedListAllocator {
 
                 // Update the previous last node to point to the new last node
                 current_node.next = Some(new_node);
-                
+
                 // Return the new node
                 return Ok(new_node_ptr);
             };
@@ -443,7 +452,6 @@ impl LinkedListAllocator {
         new_size: usize,
         align: usize,
     ) -> Result<*mut ListNode, AllocationError> {
-
         // If the node already has enough space, don't move any data
         if node.get_size() >= new_size {
             return Ok(node);
@@ -538,7 +546,10 @@ unsafe impl GlobalAlloc for GlobalKernelHeapAllocator {
                 // The offset does not wrap as it is a constant.
                 .map(|node| node.offset(1) as *mut u8)
                 // Check that the pointer has the correct alignment
-                .map(|ptr| {debug_assert_eq!(ptr as usize, align_up(ptr as usize, layout.align())); ptr} )
+                .map(|ptr| {
+                    debug_assert_eq!(ptr as usize, align_up(ptr as usize, layout.align()));
+                    ptr
+                })
                 .unwrap_or(null_mut())
         }
     }
@@ -574,7 +585,10 @@ unsafe impl GlobalAlloc for GlobalKernelHeapAllocator {
                 // The offset does not wrap as it is a constant.
                 .map(|node| node.offset(1) as *mut u8)
                 // Check that the new pointer has the correct alignment
-                .map(|ptr| {debug_assert_eq!(ptr as usize, align_up(ptr as usize, layout.align())); ptr} )
+                .map(|ptr| {
+                    debug_assert_eq!(ptr as usize, align_up(ptr as usize, layout.align()));
+                    ptr
+                })
                 .unwrap_or(null_mut())
         }
     }

@@ -617,13 +617,22 @@ impl CapabilityRegisters {
 impl Debug for CapabilityRegisters {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("CapabilityRegisters")
-            .field("capability_register_length", &self.capability_register_length())
+            .field(
+                "capability_register_length",
+                &self.capability_register_length(),
+            )
             .field("structural_parameters_1", &self.structural_parameters_1())
             .field("structural_parameters_2", &self.structural_parameters_2())
             .field("structural_parameters_3", &self.structural_parameters_3())
             .field("capability_parameters_1", &self.capability_parameters_1())
-            .field("doorbell_offset", &format_args!("{:#x}", self.doorbell_offset()))
-            .field("runtime_register_space_offset", &format_args!("{:#x}", self.runtime_register_space_offset()))
+            .field(
+                "doorbell_offset",
+                &format_args!("{:#x}", self.doorbell_offset()),
+            )
+            .field(
+                "runtime_register_space_offset",
+                &format_args!("{:#x}", self.runtime_register_space_offset()),
+            )
             .field("capability_parameters_2", &self.capability_parameters_2())
             .finish()
     }

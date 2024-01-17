@@ -37,11 +37,11 @@ pub enum CapabilityEntryMut<'a> {
     /// Compact PCI Hot Swap
     CompactPciHotSwap,
     /// PCI-X
-    /// 
+    ///
     /// Documentation for this capability can be found in the _PCI-X Protocol Addendum to the PCI Local Bus Specification_. (TODO: link)
     PciX,
     /// Hyper-Transport
-    /// 
+    ///
     /// Documentation for this capability can be found in the _HyperTransport I/O Link Specification_.
     HyperTransport,
     /// A vendor specific capability
@@ -49,7 +49,7 @@ pub enum CapabilityEntryMut<'a> {
     /// Debug Port
     DebugPort,
     /// Compact PCI Central Resource Control
-    /// 
+    ///
     /// Documentation for this capability can be found in the _PICMG 2.13 Specification_. (TODO: link)
     CompactPciCentralResourceControl,
     /// PCI Hot Plug
@@ -67,7 +67,7 @@ pub enum CapabilityEntryMut<'a> {
     /// SATA Config
     SataConfig,
     /// Advanced Features
-    /// 
+    ///
     /// Documentation for this capability can be found in the _Advanced Capabilities for Conventional PCI ECN_. (TODO: link)
     AdvancedFeatures,
     /// Enhanced Allocation

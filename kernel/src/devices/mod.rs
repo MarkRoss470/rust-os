@@ -9,14 +9,14 @@ pub unsafe fn init() {
     let _: Option<()> = acpica.scan_devices(|handle, _| {
         let info = handle.get_info().unwrap();
 
-        debug!(
-            "{}: {:?} {:?} {:?} {:?}",
-            handle.path().unwrap(),
-            info.hardware_id(),
-            info.unique_id(),
-            info.class_code(),
-            crate::util::iterator_list_debug::IteratorListDebug::new(info.compatible_id_list())
-        );
+        // debug!(
+        //     "{}: {:?} {:?} {:?} {:?}",
+        //     handle.path().unwrap(),
+        //     info.hardware_id(),
+        //     info.unique_id(),
+        //     info.class_code(),
+        //     crate::util::iterator_list_debug::IteratorListDebug::new(info.compatible_id_list())
+        // );
 
         None
     });

@@ -182,7 +182,7 @@ impl EndpointContext {
     pub fn endpoint_state(&self) -> EndpointState {
         self.dword_0.endpoint_state()
     }
-    
+
     /// The maximum number of bursts within an Interval that
     /// this endpoint supports. Mult is a “zero-based” value, where 0 to 3 represents 1 to 4 bursts,
     /// respectively. The valid range of values is ‘0’ to ‘2’.111 This field shall be ‘0’ for all endpoint types
@@ -523,8 +523,10 @@ impl EndpointContext {
         #[allow(clippy::cast_possible_truncation)]
         let low = max_esit_payload as u16;
 
-        self.dword_0.set_max_endpoint_service_time_interval_payload_high(high);
-        self.dword_5.set_max_endpoint_service_time_interval_payload_low(low);
+        self.dword_0
+            .set_max_endpoint_service_time_interval_payload_high(high);
+        self.dword_5
+            .set_max_endpoint_service_time_interval_payload_low(low);
     }
 }
 

@@ -325,7 +325,7 @@ pub struct CommandRingControl {
 
 impl CommandRingControl {
     /// Returns the [`command_ring_pointer_high`] field.
-    /// 
+    ///
     /// [`command_ring_pointer_high`]: CommandRingControl::command_ring_pointer_high
     pub fn command_ring_pointer(self) -> PhysAddr {
         PhysAddr::new(self.command_ring_pointer_high() << 6)
