@@ -1,11 +1,9 @@
 //! Contains the [`CapabilityRegisters`] struct and the types it depends on
 
-use core::fmt::Debug;
+use core::{fmt::Debug, ptr::addr_of};
 
 use alloc::string::String;
 use x86_64::VirtAddr;
-
-use crate::println;
 
 use super::volatile_getter;
 
@@ -510,7 +508,6 @@ impl Debug for CapabilityRegistersFields {
 }
 
 /// Wrapper struct around [`CapabilityRegistersFields`] to ensure accesses are volatile and read-only.
-#[derive(Debug)]
 pub struct CapabilityRegisters {
     /// The pointer to where the capability registers struct is mapped in virtual memory.
     ptr: *const CapabilityRegistersFields,
@@ -535,38 +532,48 @@ impl CapabilityRegisters {
     volatile_getter!(
         CapabilityRegisters, CapabilityRegistersFields,
         capability_register_length, u8,
-        capability_register_length
+        (pub fn capability_register_length)
     );
     volatile_getter!(
         CapabilityRegisters, CapabilityRegistersFields,
         version, u16,
-        version
+        (pub fn version)
     );
     volatile_getter!(
         CapabilityRegisters, CapabilityRegistersFields,
         structural_parameters_1, StructuralParameters1,
-        structural_parameters_1
+        (pub fn structural_parameters_1)
     );
     volatile_getter!(
         CapabilityRegisters, CapabilityRegistersFields,
         structural_parameters_2, StructuralParameters2,
-        structural_parameters_2
+        (pub fn structural_parameters_2)
     );
     volatile_getter!(
         CapabilityRegisters, CapabilityRegistersFields,
         structural_parameters_3, StructuralParameters3,
-        structural_parameters_3
+        (pub fn structural_parameters_3)
     );
     volatile_getter!(
         CapabilityRegisters, CapabilityRegistersFields,
         capability_parameters_1, CapabilityParameters1,
-        capability_parameters_1
+        (pub fn capability_parameters_1)
     );
-    volatile_getter!(
-        CapabilityRegisters, CapabilityRegistersFields,
-        doorbell_offset, DoorbellOffsetRegister,
-        doorbell_offset
-    );
+
+    // Do this one separately so that the return type can be u64 rather than RuntimeRegisterSpaceOffsetRegister
+    /// Performs a volatile read of the
+    /// [`doorbell_offset`][CapabilityRegistersFields::doorbell_offset]
+    /// field, returning the inner 
+    /// [`runtime_register_space_offset`][RuntimeRegisterSpaceOffsetRegister::runtime_register_space_offset]
+    /// field for convenience
+    pub fn doorbell_offset(&self) -> u64 {
+        // SAFETY: `self.ptr` is valid for reads as it points to the capabilities struct
+        let r: DoorbellOffsetRegister = unsafe {
+            addr_of!((*self.ptr).doorbell_offset).read_volatile()
+        };
+
+        (r.doorbell_array_offset() as u64) << 2
+    }
 
     // Do this one separately so that the return type can be u64 rather than RuntimeRegisterSpaceOffsetRegister
     /// Performs a volatile read of the
@@ -575,18 +582,18 @@ impl CapabilityRegisters {
     /// [`runtime_register_space_offset`][RuntimeRegisterSpaceOffsetRegister::runtime_register_space_offset]
     /// field for convenience
     pub fn runtime_register_space_offset(&self) -> u64 {
-        // SAFETY: `self.0` is valid for reads as it points to the capabilities struct
+        // SAFETY: `self.ptr` is valid for reads as it points to the capabilities struct
         let r: RuntimeRegisterSpaceOffsetRegister = unsafe {
-            core::ptr::read_volatile(&(*self.ptr).runtime_register_space_offset as *const _)
+            addr_of!((*self.ptr).runtime_register_space_offset).read_volatile()
         };
 
-        r.runtime_register_space_offset()
+        r.runtime_register_space_offset() * 32
     }
 
     volatile_getter!(
         CapabilityRegisters, CapabilityRegistersFields,
         capability_parameters_2, CapabilityParameters2,
-        capability_parameters_2
+        (pub fn capability_parameters_2)
     );
 }
 
@@ -607,24 +614,18 @@ impl CapabilityRegisters {
     }
 }
 
-impl CapabilityRegisters {
-    /// Reads the fields of the register and prints them in a debug format
-    pub fn debug(&self) {
-        let fields = CapabilityRegistersFields {
-            capability_register_length: self.capability_register_length(),
-            _reserved0: 0,
-            version: self.version(),
-            structural_parameters_1: self.structural_parameters_1(),
-            structural_parameters_2: self.structural_parameters_2(),
-            structural_parameters_3: self.structural_parameters_3(),
-            capability_parameters_1: self.capability_parameters_1(),
-            doorbell_offset: self.doorbell_offset(),
-            runtime_register_space_offset: RuntimeRegisterSpaceOffsetRegister::new()
-                .with_runtime_register_space_offset(self.runtime_register_space_offset()),
-            capability_parameters_2: self.capability_parameters_2(),
-        };
-
-        println!("{fields:#?}");
+impl Debug for CapabilityRegisters {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("CapabilityRegisters")
+            .field("capability_register_length", &self.capability_register_length())
+            .field("structural_parameters_1", &self.structural_parameters_1())
+            .field("structural_parameters_2", &self.structural_parameters_2())
+            .field("structural_parameters_3", &self.structural_parameters_3())
+            .field("capability_parameters_1", &self.capability_parameters_1())
+            .field("doorbell_offset", &format_args!("{:#x}", self.doorbell_offset()))
+            .field("runtime_register_space_offset", &format_args!("{:#x}", self.runtime_register_space_offset()))
+            .field("capability_parameters_2", &self.capability_parameters_2())
+            .finish()
     }
 }
 

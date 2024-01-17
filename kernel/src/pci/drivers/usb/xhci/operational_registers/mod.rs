@@ -3,13 +3,12 @@
 mod port_registers;
 
 use core::fmt::Debug;
-use spin::Mutex;
 use x86_64::{PhysAddr, VirtAddr};
 
 use self::port_registers::{PortRegister, PortRegisterMut};
 
 use super::{capability_registers::CapabilityRegisters, volatile_accessors, volatile_getter};
-use crate::{println, print};
+use crate::{print, println};
 
 /// The behaviour of when the controller is allowed to stop incrementing MFINDEX.
 /// Regardless of this setting, the controller may always stop incrementing if all root hub ports are in the
@@ -249,37 +248,26 @@ pub struct UsbStatus {
 
 /// Wrapper type to provide methods specific to the [`page_size`][OperationalRegistersFields::page_size] field
 #[derive(Clone, Copy)]
-pub struct SupportedPageSizes(u32);
+pub struct SupportedPageSize(u32);
 
-impl SupportedPageSizes {
-    /// The value of `page_size` to pass to [`is_supported`][SupportedPageSizes::is_supported] to represent a 4kiB page.
-    pub const PAGE_SIZE_4K: u8 = 12;
+impl SupportedPageSize {
+    /// Gets the page size supported by the device, e.g. a device supporting 4k pages will return 0x1000
+    pub fn page_size(&self) -> u64 {
+        let v = (self.0 as u64) << 12;
 
-    /// Gets whether the controller supports the page size with the given power of 2 width
-    ///
-    /// # Panics
-    /// If `page` size is less than 12 or greater than 27, as this is the range of page sizes supported by XHCI
-    /// (4kiB to 128MiB)
-    fn is_supported(self, page_size: u8) -> bool {
-        if !(12..=27).contains(&page_size) {
-            panic!("Page size out of range")
+        if !v.is_power_of_two() {
+            unimplemented!("Devices supporting multiple page sizes");
         }
 
-        self.0 & (1 << (page_size - 12)) != 0
+        v
     }
 }
 
-impl Debug for SupportedPageSizes {
+impl Debug for SupportedPageSize {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let mut l = f.debug_list();
-
-        (12..=27)
-            .filter(|page_size| self.is_supported(*page_size))
-            .for_each(|page_size| {
-                l.entry(&format_args!("{:#x}", 2u64.pow(page_size.into())));
-            });
-
-        l.finish()
+        f.debug_tuple("SupportedPageSize")
+            .field(&format_args!("{:#x}", self.page_size()))
+            .finish()
     }
 }
 
@@ -296,7 +284,7 @@ pub struct CommandRingControl {
     /// See the spec section [4.9.3] for more information.
     ///
     /// [4.9.3]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A185%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C524%2C0%5D
-    ring_cycle_state: bool,
+    pub ring_cycle_state: bool,
 
     /// Writing `true` to this field stops the operation of the command ring after the completion of the currently executing command.
     /// and generate a _Command Completion Event_ with the _Completion Code_ set to _Command Ring Stopped_.
@@ -304,7 +292,7 @@ pub struct CommandRingControl {
     /// See the spec section [4.6.1.1] for more info on stopping commands.
     ///
     /// [4.6.1.1]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A112%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C373%2C0%5D
-    command_stop: bool,
+    pub command_stop: bool,
 
     /// Writing `true` to this field aborts the current command and then stops the operation of the command ring,
     /// generating a _Command Completion Event_ with the _Completion Code_ set to _Command Ring Stopped_.
@@ -313,10 +301,10 @@ pub struct CommandRingControl {
     /// See the spec section [4.6.1.2] for more info on aborting commands.
     ///
     /// [4.6.1.2]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A113%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C658%2C0%5D
-    command_abort: bool,
+    pub command_abort: bool,
 
     /// Whether the command ring is currently processing commands.
-    command_ring_running: bool,
+    pub command_ring_running: bool,
 
     #[bits(2)]
     #[doc(hidden)]
@@ -336,12 +324,19 @@ pub struct CommandRingControl {
 }
 
 impl CommandRingControl {
+    /// Returns the [`command_ring_pointer_high`] field.
+    /// 
+    /// [`command_ring_pointer_high`]: CommandRingControl::command_ring_pointer_high
+    pub fn command_ring_pointer(self) -> PhysAddr {
+        PhysAddr::new(self.command_ring_pointer_high() << 6)
+    }
+
     /// Returns the register with the [`command_ring_pointer_high`][CommandRingControl::command_ring_pointer_high]
     /// field updated with the pointer passed in.
     ///
     /// # Panics
     /// If `pointer` is not 64 byte aligned
-    fn with_command_ring_pointer(self, pointer: PhysAddr) -> Self {
+    pub fn with_command_ring_pointer(self, pointer: PhysAddr) -> Self {
         assert_eq!(pointer.as_u64() & 0b111111, 0);
 
         self.with_command_ring_pointer_high(pointer.as_u64() >> 6)
@@ -410,7 +405,7 @@ struct OperationalRegistersFields {
     /// Information about the status of the controller
     usb_status: UsbStatus,
     /// What page sizes are supported
-    page_size: SupportedPageSizes,
+    page_size: SupportedPageSize,
 
     #[doc(hidden)]
     _reserved0: u32,
@@ -486,42 +481,43 @@ impl OperationalRegisters {
     }
 }
 
+// TODO: make these setters unsafe
 #[rustfmt::skip]
 impl OperationalRegisters {
     volatile_accessors!(
         OperationalRegisters, OperationalRegistersFields, 
         usb_command, UsbCommand,
-        read_usb_command, write_usb_command
+        (pub fn read_usb_command), (pub fn write_usb_command)
     );
     volatile_accessors!(
         OperationalRegisters, OperationalRegistersFields,
         usb_status, UsbStatus, 
-        read_usb_status, write_usb_status
+        (pub fn read_usb_status), (pub fn write_usb_status)
     );
     volatile_getter!(
         OperationalRegisters, OperationalRegistersFields, 
-        page_size, SupportedPageSizes, 
-        read_page_size
+        page_size, SupportedPageSize, 
+        (pub fn read_page_size)
     );
     volatile_accessors!(
         OperationalRegisters, OperationalRegistersFields, 
         device_notification_control, u32,
-        read_device_notification_control, write_device_notification_control
+        (pub fn read_device_notification_control), (pub fn write_device_notification_control)
     );
     volatile_accessors!(
         OperationalRegisters, OperationalRegistersFields, 
         command_ring_control, CommandRingControl,
-        read_command_ring_control, write_command_ring_control
+        (pub fn read_command_ring_control), (pub fn write_command_ring_control)
     );
     volatile_accessors!(
         OperationalRegisters, OperationalRegistersFields, 
         device_context_base_address_array_pointer, DeviceContextBaseAddressArrayPointer, 
-        read_device_context_base_address_array_pointer, write_device_context_base_address_array_pointer
+        (pub fn read_device_context_base_address_array_pointer), (pub fn write_device_context_base_address_array_pointer)
     );
     volatile_accessors!(
         OperationalRegisters, OperationalRegistersFields, 
         configure, ConfigureRegister,
-        read_configure, write_configure
+        (pub fn read_configure), (pub fn write_configure)
     );
 }
 
@@ -540,7 +536,7 @@ impl OperationalRegisters {
             // SAFETY: `port_number` is not greater than `max_ports`, so this pointer is valid
             unsafe {
                 Some(PortRegister::new(
-                    self.ptr.byte_add(0x400 + 0x10 * (port_number - 1)) as *mut _,
+                    self.ptr.byte_add(0x400 + 0x10 * (port_number - 1)).cast(),
                 ))
             }
         }
@@ -554,7 +550,7 @@ impl OperationalRegisters {
             // SAFETY: `port_number` is not greater than `max_ports`, so this pointer is valid
             unsafe {
                 Some(PortRegisterMut::new(
-                    self.ptr.byte_add(0x400 + 0x10 * (port_number - 1)) as *mut _,
+                    self.ptr.byte_add(0x400 + 0x10 * (port_number - 1)).cast(),
                     self,
                 ))
             }
@@ -566,7 +562,7 @@ impl OperationalRegisters {
         // SAFETY: Each port is only produced once, so it is not possible to create two `PortRegister`
         // structs for the same port. `PortRegister` contains a phantom mutable reference to the
         (1..self.max_ports as usize).map(|port_number| unsafe {
-            PortRegister::new(self.ptr.byte_add(0x400 + 0x10 * (port_number - 1)) as *mut _)
+            PortRegister::new(self.ptr.byte_add(0x400 + 0x10 * (port_number - 1)).cast())
         })
     }
 
@@ -576,7 +572,7 @@ impl OperationalRegisters {
         // structs for the same port. `PortRegister` contains a phantom mutable reference to the
         (1..self.max_ports as usize).map(|port_number| unsafe {
             PortRegisterMut::new(
-                self.ptr.byte_add(0x400 + 0x10 * (port_number - 1)) as *mut _,
+                self.ptr.byte_add(0x400 + 0x10 * (port_number - 1)).cast(),
                 self,
             )
         })
@@ -596,7 +592,8 @@ impl OperationalRegisters {
             _reserved3: 0,
             _reserved4: 0,
             _reserved5: 0,
-            device_context_base_address_array_pointer: self.read_device_context_base_address_array_pointer(),
+            device_context_base_address_array_pointer: self
+                .read_device_context_base_address_array_pointer(),
             configure: self.read_configure(),
         };
 
@@ -612,8 +609,6 @@ impl OperationalRegisters {
         }
     }
 }
-
-
 
 /// Tests that the field offsets of [`OperationalRegisters`] matches the xHCI spec,
 /// so that values are read correctly.
