@@ -54,6 +54,7 @@ mod serial;
 
 mod acpi;
 mod allocator;
+mod backtrace;
 mod cpu;
 mod devices;
 mod global_state;
@@ -91,6 +92,11 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         stack_pointer_approx
     );
     println!("In stack {:?}", cpu::gdt::get_stack(stack_pointer_approx));
+
+    match backtrace::backtrace() {
+        Ok(_) => (),
+        Err(e) => println!("Error printing backtrace: {e:?}"),
+    }
 
     flush();
 
@@ -239,6 +245,14 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
         boot_info.physical_memory_offset.into_option().unwrap()
     );
 
+    // Get initrd and store in KERNEL_STATE
+    let init_rd = core::slice::from_raw_parts(
+        boot_info.ramdisk_addr.into_option().unwrap() as _,
+        boot_info.ramdisk_len as _,
+    );
+
+    *KERNEL_STATE.initrd.write() = Some(init_rd);
+
     // SAFETY: The provided `boot_info` is correct
     unsafe { cpu::init_frame_allocator(&boot_info.memory_regions) };
 
@@ -255,6 +269,8 @@ unsafe fn init(boot_info: &'static mut BootInfo) {
     init_graphics(boot_info.framebuffer.as_mut().unwrap());
     println!("Initialised graphics");
     flush();
+
+    // panic!("Test panic for stack backtrace");
 
     // SAFETY: This function is only called once
     unsafe {
@@ -353,6 +369,7 @@ fn shell_loop() -> ! {
                                 "kinfo" => kinfo(&commands[1..]),
                                 // SAFETY: For debugging only, not sound
                                 "interrupt" => unsafe { debug_interrupt(&commands[1..]) },
+                                "panic" => panic!("User-instructed panic"),
                                 _ => println!("Unknown command {c}"),
                             }
                         }

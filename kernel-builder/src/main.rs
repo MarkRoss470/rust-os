@@ -167,15 +167,19 @@ fn main() -> ExitCode {
     // Create the directory to put kernel images, if it doesn't exist.
     fs::create_dir_all(&out_dir).expect("Should have been able to create output directory");
 
+    
+
     // create a BIOS disk image
     let bios_path = out_dir.join("bios.img");
     bootloader::BiosBoot::new(&kernel)
+        .set_ramdisk(&kernel)
         .create_disk_image(&bios_path)
         .expect("Should have been able to create BIOS image");
 
     // create a BIOS disk image
     let uefi_path = out_dir.join("uefi.img");
     bootloader::UefiBoot::new(&kernel)
+        .set_ramdisk(&kernel)           
         .create_disk_image(&uefi_path)
         .expect("Should have been able to create UEFI image");
 

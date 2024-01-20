@@ -11,7 +11,7 @@ use x86_64::{
 };
 
 /// The size of each stack in bytes
-const STACK_SIZE: usize = 5 * 4096;
+const STACK_SIZE: usize = 50 * 4096;
 /// The index into the TSS of the stack used for the [`INTERRUPTS_STACK`]
 pub const INTERRUPTS_STACK_INDEX: u16 = 0;
 /// The index into the TSS of the stack used for the [`DOUBLE_FAULT_STACK`]

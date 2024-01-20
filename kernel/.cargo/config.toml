@@ -4,6 +4,7 @@ build-std = ["core", "compiler_builtins", "alloc"]
 
 [build]
 target = "x86_64-os.json"
+rustflags = ["-Cforce-unwind-tables"]
 
 [profile.release-with-debug]
 inherits = "release"

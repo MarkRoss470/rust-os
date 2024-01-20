@@ -11,13 +11,6 @@ use crate::{
         bar::Bar,
         classcodes::ClassCode,
         devices::PciFunction,
-        drivers::usb::xhci::{
-            dcbaa::DeviceContextBaseAddressArray,
-            operational_registers::{
-                CommandRingControl, DeviceContextBaseAddressArrayPointer, OperationalRegisters,
-            },
-            trb::{CommandTrb, EventTrb},
-        },
         registers::{HeaderType, PciGeneralDeviceHeader},
         PciMappedFunction,
     },
@@ -31,10 +24,15 @@ use log::{debug, error};
 use x86_64::{PhysAddr, VirtAddr};
 
 use self::{
+    dcbaa::DeviceContextBaseAddressArray,
     doorbell::DoorbellRegisters,
     interrupter::Interrupter,
+    operational_registers::{
+        CommandRingControl, DeviceContextBaseAddressArrayPointer, OperationalRegisters,
+    },
     runtime_registers::RuntimeRegisters,
     trb::{event::command_completion::CompletionCode, CommandTrbRing, RingFullError},
+    trb::{CommandTrb, EventTrb},
 };
 
 pub mod capability_registers;
@@ -164,8 +162,6 @@ impl XhciController {
         let interrupters =
             unsafe { Self::init_interrupters(&capability_registers, &mut runtime_registers) };
 
-        // TODO: interrupts
-
         // SAFETY: This function is only called once per controller.
         // No `Bar`s exist at this point in the function.
         unsafe {
@@ -200,8 +196,6 @@ impl XhciController {
                 .with_enabled(true),
         );
 
-        debug!("{}: Polling event ring", function.function);
-
         // Wait for `host_controller_halted` to be unset
         // TODO: timeout
         loop {
@@ -221,7 +215,11 @@ impl XhciController {
             .host_controller_doorbell()
             .ring();
 
+        debug!("{}: Testing command and event rings", function.function);
+
         controller.test_command_ring().await;
+
+        debug!("{}: Polling event ring", function.function);
 
         loop {
             futures::pending!();
@@ -351,18 +349,18 @@ impl XhciController {
         (0..max_interrupters)
             .map(|i| {
                 // SAFETY: This function is only called once, so no other `InterrupterRegisterSet` exists
-                let interrupter =
+                let mut interrupter =
                     unsafe { Interrupter::new(runtime_registers.interrupter(i as _)) };
 
                 // SAFETY: This enables interrupts for this interrupter
-                // unsafe {
-                //     interrupter.registers.set_interrupter_management(
-                //         interrupter
-                //             .registers
-                //             .read_interrupter_management()
-                //             .with_interrupt_enable(true),
-                //     );
-                // }
+                unsafe {
+                    interrupter.registers.set_interrupter_management(
+                        interrupter
+                            .registers
+                            .read_interrupter_management()
+                            .with_interrupt_enable(true),
+                    );
+                }
 
                 #[allow(clippy::let_and_return)] // TODO: remove when above code is un-commented
                 interrupter

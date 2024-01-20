@@ -1,8 +1,11 @@
 //! Types for managing the kernel's global state
 
+use core::cell::RefCell;
 use core::sync::atomic::{AtomicBool, AtomicUsize};
 
 use acpica_bindings::AcpicaOperationFullyInitialized;
+use bootloader_api::BootInfo;
+use spin::rwlock::RwLock;
 use spin::{Mutex, MutexGuard};
 use x86_64::structures::paging::OffsetPageTable;
 
@@ -103,6 +106,8 @@ impl<'a, T> core::ops::DerefMut for GlobalStateLock<'a, T> {
 /// The state of the kernel, and resources needed to manage memory and hardware
 #[derive(Debug)]
 pub struct KernelState {
+    pub initrd: RwLock<Option<&'static [u8]>>,
+
     /// Struct which manages page tables to map virtual pages to physical memory
     pub page_table: GlobalState<KernelPageTable>,
     /// Struct which manages allocating physical frames of memory
@@ -135,6 +140,8 @@ impl KernelState {
 
 /// The global kernel state
 pub static KERNEL_STATE: KernelState = KernelState {
+    initrd: RwLock::new(None),
+
     page_table: GlobalState::new(),
     frame_allocator: GlobalState::new(),
     heap_allocator: ALLOCATOR.get(),
