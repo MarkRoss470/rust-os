@@ -8,7 +8,7 @@ use core::{
 
 use alloc::boxed::Box;
 use gimli::{BaseAddresses, NativeEndian, UnwindContext};
-use log::debug;
+
 use object::{elf::FileHeader64, Object, ObjectSection};
 
 use crate::{print, println, KERNEL_STATE};
@@ -40,7 +40,7 @@ impl From<object::read::Error> for BacktracePrintError {
 }
 
 impl From<Infallible> for BacktracePrintError {
-    fn from(value: Infallible) -> Self {
+    fn from(_: Infallible) -> Self {
         unreachable!()
     }
 }
@@ -103,6 +103,7 @@ fn backtrace_impl() -> Result<(), BacktracePrintError> {
 
     let stack_pointer: u64;
     let instruction_pointer: u64;
+
     // SAFETY: This reads the stack pointer register and doesn't affect any other registers
     unsafe {
         asm!(
@@ -120,36 +121,27 @@ fn backtrace_impl() -> Result<(), BacktracePrintError> {
 
     println!();
 
-    // Don't print the first few stack frames because they're just the panicking code + this function
+    // Don't print the first few stack frames because they're just the panicking and backtracing code
     let mut frames_checked = 0;
-    const FRAMES_TO_SKIP: usize = 3;
+    const FRAMES_TO_SKIP: usize = 4;
 
     loop {
         frames_checked += 1;
         if frames_checked > FRAMES_TO_SKIP {
             print_location(&dwarf, address_to_look_up, frames_checked - FRAMES_TO_SKIP)
-                .unwrap_or_else(|_| {
-                    println!("{address_to_look_up:#x} @ ?? - Error getting frame info")
+                .unwrap_or_else(|e| {
+                    println!("{address_to_look_up:#x} @ ?? - Error getting frame info: {e:?}");
                 });
         }
-        // debug!("Address of function is {address_to_look_up:#x}");
 
         let unwinding_info = table.unwind_info_for_address(
             &eh_frame,
             &base_addresses,
             &mut ctx,
-            address_to_look_up,
+            // Look up one before the current address to correctly find frames when at the very end of a function
+            address_to_look_up - 1,
             gimli::UnwindSection::cie_from_offset,
-        );
-
-        let unwinding_info = match unwinding_info {
-            Ok(u) => u,
-            Err(gimli::Error::NoUnwindInfoForAddress) => return Ok(()),
-            Err(e) => Err(e)?,
-        };
-
-        // debug!("{fde:#?}");
-        // debug!("{unwinding_info:#?}");
+        )?;
 
         let frame_offset = match unwinding_info.cfa() {
             gimli::CfaRule::RegisterAndOffset { register, offset } => {
@@ -165,9 +157,12 @@ fn backtrace_impl() -> Result<(), BacktracePrintError> {
 
         // SAFETY: TODO
         address_to_look_up = unsafe { (stack_pointer as *const u64).read() };
-    }
 
-    Ok(())
+        // If the read address is 0, this is the last call frame, so exit.
+        if address_to_look_up == 0 {
+            return Ok(());
+        }
+    }
 }
 
 fn get_cu_offset(
@@ -212,9 +207,12 @@ fn print_location(
     address: u64,
     frame_number: usize,
 ) -> Result<(), BacktracePrintError> {
+    // Look up one before the current address to correctly find frames when at the very end of a function
+    let address_to_look_up = address - 1;
+
     // Get the offset into `.debug_info` of the compilation unit for this address
-    let cu_offset =
-        get_cu_offset(dwarf, address)?.ok_or(BacktracePrintError::AddressNotFoundInARanges)?;
+    let cu_offset = get_cu_offset(dwarf, address_to_look_up)?
+        .ok_or(BacktracePrintError::AddressNotFoundInARanges)?;
     // Get the compilation unit for this address
     let cu = get_cu_at_offset(dwarf, cu_offset)?.ok_or(BacktracePrintError::BadDebugInfoEntry)?;
 
@@ -245,13 +243,13 @@ fn print_location(
     let mut found = None;
 
     while let Some((_, row)) = rows.next_row()? {
-        if row.address() == address {
+        if row.address() == address_to_look_up {
             found = Some(*row);
             break;
         }
 
         if let Some(previous) = previous {
-            if (previous.address()..row.address()).contains(&address) {
+            if (previous.address()..row.address()).contains(&address_to_look_up) {
                 found = Some(previous);
                 break;
             }
