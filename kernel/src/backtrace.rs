@@ -3,11 +3,12 @@
 use core::{
     arch::asm,
     convert::Infallible,
+    num::TryFromIntError,
     sync::atomic::{AtomicBool, Ordering},
 };
 
 use alloc::boxed::Box;
-use gimli::{BaseAddresses, NativeEndian, UnwindContext};
+use gimli::{BaseAddresses, EndianSlice, LineRow, NativeEndian, Register, UnwindContext};
 
 use object::{elf::FileHeader64, Object, ObjectSection};
 
@@ -23,6 +24,13 @@ pub enum BacktracePrintError {
     NoEhTable,
     AddressNotFoundInARanges,
     BadDebugInfoEntry,
+    /// An unsupported type of data or instruction was encountered
+    Unimplemented(&'static str),
+    /// Arithmetic overflow etc.
+    MathsError,
+    /// A register was undefined which shouldn't have been
+    UndefinedRegister,
+
     /// The panic leading to this backtrace started in the backtracing code itself
     BacktraceOngoing,
 }
@@ -45,6 +53,12 @@ impl From<Infallible> for BacktracePrintError {
     }
 }
 
+impl From<TryFromIntError> for BacktracePrintError {
+    fn from(_: TryFromIntError) -> Self {
+        Self::MathsError
+    }
+}
+
 type ElfFile<'a> = object::read::elf::ElfFile<'a, FileHeader64<object::NativeEndian>>;
 type ElfSection<'a> =
     object::read::elf::ElfSection<'a, 'a, FileHeader64<object::NativeEndian>, &'a [u8]>;
@@ -52,6 +66,7 @@ type EhFrameHeader<'a> = gimli::ParsedEhFrameHdr<gimli::EndianSlice<'a, gimli::L
 type EhFrame<'a> = gimli::EhFrame<gimli::EndianSlice<'a, gimli::LittleEndian>>;
 type Dwarf<'a> = gimli::Dwarf<gimli::EndianSlice<'a, gimli::LittleEndian>>;
 type UnitHeader<'a> = gimli::UnitHeader<gimli::EndianSlice<'a, gimli::NativeEndian>, usize>;
+type UnwindTableRow<'a> = gimli::UnwindTableRow<EndianSlice<'a, gimli::NativeEndian>>;
 
 // TODO: make thread-local
 /// Whether a backtrace is currently being printed.
@@ -103,19 +118,22 @@ fn backtrace_impl() -> Result<(), BacktracePrintError> {
 
     let stack_pointer: u64;
     let instruction_pointer: u64;
+    let mut rbp: u64;
 
-    // SAFETY: This reads the stack pointer register and doesn't affect any other registers
+    // SAFETY: This reads the RSP, RIP, and RBP registers and doesn't affect any other registers.
     unsafe {
         asm!(
             "push rsp",
             "pop {stack_pointer}",
             "lea {instruction_pointer}, [rip]",
+            "mov {rbp}, rbp",
             stack_pointer = out(reg) stack_pointer,
-            instruction_pointer = out(reg) instruction_pointer
+            instruction_pointer = out(reg) instruction_pointer,
+            rbp = out(reg) rbp
         );
     }
 
-    let mut stack_pointer = stack_pointer - 8;
+    let mut frame_pointer = stack_pointer;
     let mut address_to_look_up = instruction_pointer;
     let mut ctx = Box::new(UnwindContext::new());
 
@@ -127,6 +145,7 @@ fn backtrace_impl() -> Result<(), BacktracePrintError> {
 
     loop {
         frames_checked += 1;
+
         if frames_checked > FRAMES_TO_SKIP {
             print_location(&dwarf, address_to_look_up, frames_checked - FRAMES_TO_SKIP)
                 .unwrap_or_else(|e| {
@@ -143,25 +162,73 @@ fn backtrace_impl() -> Result<(), BacktracePrintError> {
             gimli::UnwindSection::cie_from_offset,
         )?;
 
-        let frame_offset = match unwinding_info.cfa() {
+        frame_pointer = match unwinding_info.cfa() {
             gimli::CfaRule::RegisterAndOffset { register, offset } => {
-                assert_eq!(register.0, 7);
-                *offset
+                let register_value = match register.0 {
+                    6 => rbp,
+                    7 => frame_pointer,
+                    _ => {
+                        return Err(BacktracePrintError::Unimplemented(
+                            "Untracked register needed for calculation",
+                        ))
+                    }
+                };
+
+                register_value
+                    .checked_add_signed(*offset)
+                    .ok_or(BacktracePrintError::MathsError)?
             }
-            gimli::CfaRule::Expression(_) => todo!(),
+
+            gimli::CfaRule::Expression(_) => {
+                return Err(BacktracePrintError::Unimplemented(
+                    "Expression rule for getting return pointer",
+                ))
+            }
         };
 
-        stack_pointer = stack_pointer.checked_add_signed(frame_offset).unwrap();
-
-        // debug!("Stack pointer of next address is {stack_pointer:#x}");
+        rbp = eval_register(unwinding_info, Register(6), frame_pointer, rbp)?
+            .ok_or(BacktracePrintError::UndefinedRegister)?;
 
         // SAFETY: TODO
-        address_to_look_up = unsafe { (stack_pointer as *const u64).read() };
+        address_to_look_up = match eval_register(unwinding_info, Register(16), frame_pointer, rbp)?
+        {
+            // A null pointer or undefined RIP means that this is the last call frame
+            Some(0) | None => return Ok(()),
+            Some(addr) => addr,
+        };
+    }
+}
 
-        // If the read address is 0, this is the last call frame, so exit.
-        if address_to_look_up == 0 {
-            return Ok(());
+fn eval_register(
+    unwinding_info: &UnwindTableRow,
+    register: Register,
+    frame_pointer: u64,
+    rbp: u64,
+) -> Result<Option<u64>, BacktracePrintError> {
+    match unwinding_info.register(register) {
+        gimli::RegisterRule::Offset(off) => {
+            // SAFETY: TODO
+            let value = unsafe {
+                (frame_pointer as *const u64)
+                    .byte_offset(off.try_into()?)
+                    .read()
+            };
+
+            Ok(Some(value))
         }
+
+        gimli::RegisterRule::Undefined => {
+            if register.0 == 7 {
+                Ok(Some(frame_pointer))
+            } else if register.0 == 6 {
+                Ok(Some(rbp))
+            } else {
+                Ok(None)
+            }
+        }
+
+        rule => todo!("{rule:?}"),
+        // _ => return Err(BacktracePrintError::Unimplemented("")),
     }
 }
 
