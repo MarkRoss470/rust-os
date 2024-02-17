@@ -36,7 +36,7 @@ acpica-bindings = { version = "0.1", features = ["x86_64"] }
 
 gimli = { version = "0.28", default-features = false, features = ["read-core", "read"] }
 object = { version = "0.32", default-features = false, features = ["read_core", "elf"] }
-addr2line = { version = "0.21", default-features = false}
+rustc-demangle = { version = "0.1" }
 
 # For handling async code
 [dependencies.futures]

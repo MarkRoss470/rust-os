@@ -19,15 +19,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "addr2line"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a30b2e23b9e17a9f90641c7ab1549cd9b44f296d3ccbf309d2863cfe398a0cb"
-dependencies = [
- "gimli",
-]
-
-[[package]]
 name = "adler"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -311,7 +302,6 @@ name = "os"
 version = "0.1.0"
 dependencies = [
  "acpica-bindings",
- "addr2line",
  "bitfield-struct",
  "bootloader_api",
  "conquer-once",
@@ -324,6 +314,7 @@ dependencies = [
  "object",
  "pc-keyboard",
  "pic8259",
+ "rustc-demangle",
  "spin 0.9.8",
  "uart_16550",
  "volatile 0.5.1",
@@ -398,6 +389,12 @@ checksum = "567664f262709473930a4bf9e51bf2ebf3348f2e748ccc50dea20646858f8f29"
 dependencies = [
  "bitflags",
 ]
+
+[[package]]
+name = "rustc-demangle"
+version = "0.1.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d626bb9dae77e28219937af045c257c28bfd3f69333c512553507f5f9798cb76"
 
 [[package]]
 name = "rustversion"

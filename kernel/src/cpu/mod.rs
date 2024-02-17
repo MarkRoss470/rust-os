@@ -11,6 +11,7 @@ pub mod ps2;
 pub use frame_allocator::BootInfoFrameAllocator;
 pub use idt::{
     register_interrupt_callback, remove_interrupt_callback, CallbackAddError, CallbackRemoveError,
+    interrupt_handler_addresses
 };
 
 use bootloader_api::info::MemoryRegions;

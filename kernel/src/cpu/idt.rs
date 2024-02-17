@@ -6,7 +6,7 @@ use acpica_bindings::types::{
 use alloc::vec::Vec;
 use log::{trace, warn};
 use spin::Mutex;
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
+use x86_64::{structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode}, VirtAddr};
 
 use crate::{
     cpu::interrupt_controllers::end_interrupt,
@@ -173,9 +173,6 @@ pub unsafe fn init() {
         idt.stack_segment_fault
             .set_handler_fn(unknown_interrupt_with_error_code::<2>)
             .set_stack_index(INTERRUPTS_STACK_INDEX);
-        idt.invalid_tss
-            .set_handler_fn(unknown_interrupt_with_error_code::<3>)
-            .set_stack_index(INTERRUPTS_STACK_INDEX);
         idt.general_protection_fault
             .set_handler_fn(general_protection_fault_handler)
             .set_stack_index(INTERRUPTS_STACK_INDEX);
@@ -239,6 +236,37 @@ pub unsafe fn init() {
         IDT = Some(idt);
         IDT.as_ref().unwrap().load();
     }
+}
+
+/// Gets a list of all currently registered interrupt handler functions.
+pub fn interrupt_handler_addresses() -> [VirtAddr; 256] {
+    let mut addresses = [VirtAddr::new(0); 256];
+
+    // SAFETY: TODO
+    let idt = unsafe { IDT.as_ref().unwrap() };
+
+    addresses[10] = idt.invalid_tss.handler_addr();
+    addresses[11] = idt.segment_not_present.handler_addr();
+    addresses[12] = idt.stack_segment_fault.handler_addr();
+    addresses[13] = idt.general_protection_fault.handler_addr();
+    addresses[17] = idt.alignment_check.handler_addr();
+    addresses[29] = idt.vmm_communication_exception.handler_addr();
+    addresses[30] = idt.security_exception.handler_addr();
+    addresses[18] = idt.machine_check.handler_addr();
+
+    addresses[3] = idt.breakpoint.handler_addr();
+    addresses[14] = idt.page_fault.handler_addr();
+    addresses[6] = idt.invalid_opcode.handler_addr();
+    addresses[8] = idt.double_fault.handler_addr();
+
+    for i in 0..=255 {
+        match i {
+            8 | 10..=15 | 17 | 18 | 21..=31 => continue,
+            _ => addresses[i] = idt[i].handler_addr(),
+        };
+    }
+
+    addresses
 }
 
 /// The index in the IDT where different types of hardware interrupt handlers will be registered

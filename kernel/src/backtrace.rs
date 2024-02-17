@@ -8,9 +8,13 @@ use core::{
 };
 
 use alloc::boxed::Box;
-use gimli::{BaseAddresses, EndianSlice, LineRow, NativeEndian, Register, UnwindContext};
+use gimli::{
+    BaseAddresses, DW_AT_high_pc, DW_AT_linkage_name, DW_AT_low_pc, DW_AT_name,
+    DW_TAG_subprogram, EndianSlice, LineRow, NativeEndian, Register, UnwindContext,
+};
 
 use object::{elf::FileHeader64, Object, ObjectSection};
+use x86_64::VirtAddr;
 
 use crate::{print, println, KERNEL_STATE};
 
@@ -67,6 +71,7 @@ type EhFrame<'a> = gimli::EhFrame<gimli::EndianSlice<'a, gimli::LittleEndian>>;
 type Dwarf<'a> = gimli::Dwarf<gimli::EndianSlice<'a, gimli::LittleEndian>>;
 type UnitHeader<'a> = gimli::UnitHeader<gimli::EndianSlice<'a, gimli::NativeEndian>, usize>;
 type UnwindTableRow<'a> = gimli::UnwindTableRow<EndianSlice<'a, gimli::NativeEndian>>;
+type LineProgramHeader<'a> = gimli::LineProgramHeader<EndianSlice<'a, gimli::NativeEndian>>;
 
 // TODO: make thread-local
 /// Whether a backtrace is currently being printed.
@@ -116,6 +121,8 @@ fn backtrace_impl() -> Result<(), BacktracePrintError> {
         Ok(gimli::EndianSlice::new(data, NativeEndian))
     })?;
 
+    let interrupt_handlers = crate::cpu::interrupt_handler_addresses();
+
     let stack_pointer: u64;
     let instruction_pointer: u64;
     let mut rbp: u64;
@@ -146,12 +153,15 @@ fn backtrace_impl() -> Result<(), BacktracePrintError> {
     loop {
         frames_checked += 1;
 
-        if frames_checked > FRAMES_TO_SKIP {
+        let function_start = if frames_checked > FRAMES_TO_SKIP {
             print_location(&dwarf, address_to_look_up, frames_checked - FRAMES_TO_SKIP)
                 .unwrap_or_else(|e| {
                     println!("{address_to_look_up:#x} @ ?? - Error getting frame info: {e:?}");
-                });
-        }
+                    None
+                })
+        } else {
+            None
+        };
 
         let unwinding_info = table.unwind_info_for_address(
             &eh_frame,
@@ -188,6 +198,13 @@ fn backtrace_impl() -> Result<(), BacktracePrintError> {
 
         rbp = eval_register(unwinding_info, Register(6), frame_pointer, rbp)?
             .ok_or(BacktracePrintError::UndefinedRegister)?;
+
+        // If this frame is an interrupt handler, the next stack frame will be invalid so stop the trace
+        if let Some(function_start) = function_start {
+            if interrupt_handlers.contains(&VirtAddr::new(function_start)) {
+                return Ok(())
+            }
+        }
 
         // SAFETY: TODO
         address_to_look_up = match eval_register(unwinding_info, Register(16), frame_pointer, rbp)?
@@ -268,15 +285,10 @@ fn get_cu_at_offset<'a>(
     Ok(None)
 }
 
-/// TODO: docs
-fn print_location(
-    dwarf: &Dwarf,
-    address: u64,
-    frame_number: usize,
-) -> Result<(), BacktracePrintError> {
-    // Look up one before the current address to correctly find frames when at the very end of a function
-    let address_to_look_up = address - 1;
-
+fn get_line_row<'a>(
+    dwarf: &'a Dwarf<'a>,
+    address_to_look_up: u64,
+) -> Result<Option<(UnitHeader, LineRow, LineProgramHeader<'a>)>, BacktracePrintError> {
     // Get the offset into `.debug_info` of the compilation unit for this address
     let cu_offset = get_cu_offset(dwarf, address_to_look_up)?
         .ok_or(BacktracePrintError::AddressNotFoundInARanges)?;
@@ -325,41 +337,108 @@ fn print_location(
         previous = Some(*row);
     }
 
-    print!("#{frame_number:03}  0x{address:016x} in ");
+    Ok(found.map(|found| (cu, found, rows.header().clone())))
+}
 
-    // Print out debug info for found line
-    if let Some(found) = found {
-        let file = &found.file(rows.header());
+/// TODO: docs
+/// Prints out a line of a stack trace for the given address.
+/// Also computes and returns the starting address of the function the address is in.
+fn print_location(
+    dwarf: &Dwarf,
+    address: u64,
+    frame_number: usize,
+) -> Result<Option<u64>, BacktracePrintError> {
+    print!("#{frame_number:03} 0x{address:016x} ");
 
-        if let Some(file) = file {
-            let unit = gimli::Unit::new(dwarf, cu)?;
+    // Look up one before the current address to correctly find frames when at the very end of a function
+    let address_to_look_up = address - 1;
 
-            let dir = file.directory(rows.header());
-            let dir = dir.and_then(|dir| dwarf.attr_string(&unit, dir).ok());
-            let dir = dir.as_ref().and_then(|dir| core::str::from_utf8(dir).ok());
+    let Some((cu, row, header)) = get_line_row(dwarf, address_to_look_up)? else {
+        return Ok(None);
+    };
 
-            let file = file.path_name();
-            let file = dwarf.attr_string(&unit, file)?;
-            let file = core::str::from_utf8(&file).unwrap();
+    let abbreviations = cu.abbreviations(&dwarf.debug_abbrev)?;
+    let mut entries = cu.entries(&abbreviations);
+    let mut found = false;
+    let mut function_start = None;
 
-            print!("{}/{file}", dir.unwrap_or("??"));
+    while let Some((_, entry)) = entries.next_dfs()? {
+        if entry.tag() != DW_TAG_subprogram {
+            continue;
+        }
 
-            if let Some(line) = found.line() {
-                print!(" - {line}");
+        let name = entry
+            .attr(DW_AT_name)?
+            .and_then(|attr| attr.string_value(&dwarf.debug_str))
+            .and_then(|attr| attr.to_string().ok());
 
-                match found.column() {
-                    gimli::ColumnType::LeftEdge => (),
-                    gimli::ColumnType::Column(column) => print!(":{column}"),
-                }
+        let Some(name) = name else {
+            continue;
+        };
+
+        let Ok(Some(gimli::AttributeValue::Addr(start))) = entry.attr_value(DW_AT_low_pc) else {
+            continue;
+        };
+
+        let Ok(Some(gimli::AttributeValue::Udata(len))) = entry.attr_value(DW_AT_high_pc) else {
+            continue;
+        };
+
+        if (start..start + len).contains(&address_to_look_up) {
+            function_start = Some(start);
+            println!("@ {name}");
+
+            let symbol_name = entry
+                .attr(DW_AT_linkage_name)?
+                .and_then(|attr| attr.string_value(&dwarf.debug_str))
+                .and_then(|attr| attr.to_string().ok());
+
+            if let Some(symbol_name) = symbol_name {
+                println!("       {}", rustc_demangle::demangle(symbol_name));
             }
 
-            println!();
-        } else {
-            println!("??");
+            found = true;
+            break;
         }
     }
 
-    Ok(())
+    // If the function was not found, print a newline to keep consistent formatting
+    if !found {
+        println!();
+    }
+
+    // Print out debug info for found line
+    let file = &row.file(&header);
+
+    let Some(file) = file else {
+        println!();
+        return Ok(function_start);
+    };
+
+    let unit = gimli::Unit::new(dwarf, cu)?;
+
+    let dir = file.directory(&header);
+    let dir = dir.and_then(|dir| dwarf.attr_string(&unit, dir).ok());
+    let dir = dir.as_ref().and_then(|dir| core::str::from_utf8(dir).ok());
+
+    let file = file.path_name();
+    let file = dwarf.attr_string(&unit, file)?;
+    let file = core::str::from_utf8(&file).unwrap_or("??");
+
+    print!("       in {}/{file}", dir.unwrap_or("??"));
+
+    if let Some(line) = row.line() {
+        print!(" - {line}");
+
+        match row.column() {
+            gimli::ColumnType::LeftEdge => (),
+            gimli::ColumnType::Column(column) => print!(":{column}"),
+        }
+    }
+
+    println!();
+
+    Ok(function_start)
 }
 
 fn get_eh_frame<'a>(object_file: &'a ElfFile<'a>) -> Result<EhFrame<'a>, BacktracePrintError> {
