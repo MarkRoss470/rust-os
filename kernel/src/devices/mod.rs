@@ -1,4 +1,4 @@
-use log::debug;
+//! Device management code
 
 use crate::global_state::KERNEL_STATE;
 

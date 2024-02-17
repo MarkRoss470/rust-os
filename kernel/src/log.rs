@@ -1,3 +1,5 @@
+//! Code for logging data using the [`log`] crate,
+
 use log::Log;
 
 use crate::graphics::{Colour, WRITER};
@@ -13,6 +15,7 @@ impl Log for KernelLogger {
             log::Level::Error => true,
             log::Level::Warn => true,
             log::Level::Trace | log::Level::Debug | log::Level::Info => {
+                #[allow(clippy::needless_bool)] // For easier modification of this code in future
                 if target.starts_with("acpi") {
                     ![
                         "acpi_os_create_semaphore",

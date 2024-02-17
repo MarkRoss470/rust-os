@@ -9,8 +9,6 @@
 #![reexport_test_harness_main = "test_main"]
 // For interrupts
 #![feature(abi_x86_interrupt)]
-// For checking offsets of struct fields
-#![feature(offset_of)]
 // For checking pointer alignment
 #![feature(pointer_is_aligned)]
 // Nice-to-have int methods, such as `div_ceil`
@@ -44,9 +42,8 @@ extern crate bitfield_struct;
 extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
-use bootloader_api::{info::MemoryRegions, BootInfo, BootloaderConfig};
+use bootloader_api::{BootInfo, BootloaderConfig};
 use cpu::interrupt_controllers::send_debug_self_interrupt;
-use x86_64::VirtAddr;
 
 #[macro_use]
 mod serial;
@@ -57,51 +54,22 @@ mod cpu;
 mod devices;
 mod global_state;
 mod graphics;
+mod init;
 pub mod input;
+mod log;
+mod panic;
 mod pci;
 mod scheduler;
+pub mod util;
+
 #[cfg(test)]
 mod tests;
-pub mod util;
-mod panic;
-mod log;
-mod init;
 
 use global_state::*;
-use graphics::init_graphics;
-use input::{init_keybuffer, pop_key};
+use input::pop_key;
 use pci::lspci;
 
-use crate::{
-    acpi::power_off,
-    graphics::{clear, flush, Colour, WRITER},
-    scheduler::num_tasks,
-};
-
-/// Prints out the regions of a [`MemoryRegions`] struct in a compact debug form.
-fn debug_memory_regions(memory_regions: &MemoryRegions) {
-    println!();
-
-    let first = memory_regions.first().unwrap();
-
-    // Keep track of the previous region to merge adjacent regions of the same kind
-    let mut last_start = first.start;
-    let mut last_end = first.end;
-    let mut last_kind = first.kind;
-
-    for region in memory_regions.iter().skip(1) {
-        if region.start != last_end || region.kind != last_kind {
-            println!("{:#016x} - {:#016x}: {:?}", last_start, last_end, last_kind);
-            last_start = region.start;
-            last_end = region.end;
-            last_kind = region.kind;
-        } else {
-            last_end = region.end;
-        }
-    }
-
-    println!();
-}
+use crate::{acpi::power_off, graphics::clear, scheduler::num_tasks};
 
 /// The config struct to instruct the bootloader how to load the kernel
 const BOOT_CONFIG: BootloaderConfig = {

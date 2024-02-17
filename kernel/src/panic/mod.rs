@@ -1,3 +1,5 @@
+//! Code related to panicking
+
 #[cfg(debug_assertions)]
 pub mod backtrace;
 
@@ -28,7 +30,10 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         Err(e) => println!("Error printing backtrace: {e:?}"),
     }
 
-    flush();
+    // There's no nice way to handle this because unwrapping would cause a second panic,
+    // while just printing an error would require a second call to `flush`.
+    // The best thing to do is just ignore the error.
+    let _ = flush();
 
     loop {
         x86_64::instructions::hlt();

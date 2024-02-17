@@ -1,3 +1,5 @@
+//! Code for interacting with the [`acpica_bindings`] crate for ACPI management
+
 pub mod io_apic;
 pub mod local_apic;
 

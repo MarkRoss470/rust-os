@@ -1,3 +1,5 @@
+//! Code to initialise the kernel and hardware
+
 use crate::{acpi, allocator, cpu, log, println};
 
 use bootloader_api::BootInfo;
@@ -7,7 +9,6 @@ use crate::global_state::*;
 use crate::graphics::flush;
 use crate::graphics::init_graphics;
 use crate::input::init_keybuffer;
-
 
 /// Initialises the kernel and constructs a [`KernelState`] struct to represent it.
 ///
@@ -34,10 +35,13 @@ pub unsafe fn init(boot_info: &'static mut BootInfo) {
     );
 
     // Get initrd and store in KERNEL_STATE
-    let init_rd = core::slice::from_raw_parts(
-        boot_info.ramdisk_addr.into_option().unwrap() as _,
-        boot_info.ramdisk_len as _,
-    );
+    // SAFETY: The bootloader has loaded the initrd here, so it is sound to construct this slice
+    let init_rd = unsafe {
+        core::slice::from_raw_parts(
+            boot_info.ramdisk_addr.into_option().unwrap() as _,
+            boot_info.ramdisk_len.try_into().unwrap(),
+        )
+    };
 
     *KERNEL_STATE.initrd.write() = Some(init_rd);
 
@@ -56,8 +60,8 @@ pub unsafe fn init(boot_info: &'static mut BootInfo) {
 
     init_graphics(boot_info.framebuffer.as_mut().unwrap());
     println!("Initialised graphics");
-    
-    flush();
+
+    let _ = flush();
 
     // SAFETY: This function is only called once
     unsafe {
@@ -71,7 +75,7 @@ pub unsafe fn init(boot_info: &'static mut BootInfo) {
     init_keybuffer();
 
     println!("Initialising APIC");
-    flush();
+    let _ = flush();
 
     // SAFETY: This function is only called once.
     // TODO: This doesn't need unwrapping if the PIC is working
@@ -80,7 +84,7 @@ pub unsafe fn init(boot_info: &'static mut BootInfo) {
     // SAFETY: This function is only called once.
     // The core is set up to receive interrupts as `init_interrupts` has been called above.
     unsafe { cpu::interrupt_controllers::init_io_apic().unwrap() };
-    flush();
+    let _ = flush();
 
     // SAFETY: This function is only called once.
     unsafe { cpu::init_ps2() };
@@ -89,5 +93,31 @@ pub unsafe fn init(boot_info: &'static mut BootInfo) {
     // unsafe { devices::init() };
 
     println!("Finished initialising kernel");
-    flush();
+    let _ = flush();
 }
+
+
+// /// Prints out the regions of a [`MemoryRegions`] struct in a compact debug form.
+// fn debug_memory_regions(memory_regions: &MemoryRegions) {
+//     println!();
+
+//     let first = memory_regions.first().unwrap();
+
+//     // Keep track of the previous region to merge adjacent regions of the same kind
+//     let mut last_start = first.start;
+//     let mut last_end = first.end;
+//     let mut last_kind = first.kind;
+
+//     for region in memory_regions.iter().skip(1) {
+//         if region.start != last_end || region.kind != last_kind {
+//             println!("{:#016x} - {:#016x}: {:?}", last_start, last_end, last_kind);
+//             last_start = region.start;
+//             last_end = region.end;
+//             last_kind = region.kind;
+//         } else {
+//             last_end = region.end;
+//         }
+//     }
+
+//     println!();
+// }
