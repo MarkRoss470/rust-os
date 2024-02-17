@@ -46,7 +46,6 @@ extern crate alloc;
 use alloc::{string::String, vec::Vec};
 use bootloader_api::{info::MemoryRegions, BootInfo, BootloaderConfig};
 use cpu::interrupt_controllers::send_debug_self_interrupt;
-use log::Log;
 use x86_64::VirtAddr;
 
 #[macro_use]
@@ -54,7 +53,6 @@ mod serial;
 
 mod acpi;
 mod allocator;
-mod backtrace;
 mod cpu;
 mod devices;
 mod global_state;
@@ -65,6 +63,9 @@ mod scheduler;
 #[cfg(test)]
 mod tests;
 pub mod util;
+mod panic;
+mod log;
+mod init;
 
 use global_state::*;
 use graphics::init_graphics;
@@ -76,34 +77,6 @@ use crate::{
     graphics::{clear, flush, Colour, WRITER},
     scheduler::num_tasks,
 };
-
-/// This function is called on panic.
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &core::panic::PanicInfo) -> ! {
-    x86_64::instructions::interrupts::disable();
-
-    println!("{info}");
-
-    let stack_pointer_approx = info as *const _ as usize;
-
-    println!(
-        "Current stack pointer is approximately {:#x}",
-        stack_pointer_approx
-    );
-    println!("In stack {:?}", cpu::gdt::get_stack(stack_pointer_approx));
-
-    match backtrace::backtrace() {
-        Ok(_) => (),
-        Err(e) => println!("Error printing backtrace: {e:?}"),
-    }
-
-    flush();
-
-    loop {
-        x86_64::instructions::hlt();
-    }
-}
 
 /// Prints out the regions of a [`MemoryRegions`] struct in a compact debug form.
 fn debug_memory_regions(memory_regions: &MemoryRegions) {
@@ -130,181 +103,6 @@ fn debug_memory_regions(memory_regions: &MemoryRegions) {
     println!();
 }
 
-/// The kernel's implementation of the [`Log`] trait for printing logs
-struct KernelLogger;
-
-impl Log for KernelLogger {
-    fn enabled(&self, metadata: &log::Metadata) -> bool {
-        let target = metadata.target();
-        match metadata.level() {
-            log::Level::Error => true,
-            log::Level::Warn => true,
-            log::Level::Trace | log::Level::Debug | log::Level::Info => {
-                if target.starts_with("acpi") {
-                    ![
-                        "acpi_os_create_semaphore",
-                        "acpi_os_delete_semaphore",
-                        "acpi_os_signal_semaphore",
-                        "acpi_os_wait_semaphore",
-                        "acpi_os_allocate",
-                        "acpi_os_free",
-                    ]
-                    .contains(&target)
-                } else if target.starts_with("ps2") {
-                    false
-                } else {
-                    true
-                }
-            }
-        }
-    }
-
-    fn log(&self, record: &log::Record) {
-        if !self.enabled(record.metadata()) {
-            return;
-        }
-
-        print!("[");
-
-        let level_str = match record.level() {
-            log::Level::Error => {
-                if let Ok(mut w) = WRITER.try_locked_if_init() {
-                    w.set_colour(Colour::RED)
-                }
-                "ERROR"
-            }
-            log::Level::Warn => {
-                if let Ok(mut w) = WRITER.try_locked_if_init() {
-                    w.set_colour(Colour::YELLOW)
-                }
-                "WARNING"
-            }
-            log::Level::Info => "INFO",
-            log::Level::Debug => "DEBUG",
-            log::Level::Trace => "TRACE",
-        };
-
-        print!("{level_str}");
-
-        if let Ok(mut w) = WRITER.try_locked_if_init() {
-            w.set_colour(Colour::WHITE)
-        }
-
-        match (record.module_path(), record.file()) {
-            // If the record is an error, print the whole file path not just the module
-            (_, Some(file)) if record.level() == log::Level::Error => {
-                print!(" {file}");
-                if let Some(line) = record.line() {
-                    print!(":{line}");
-                }
-            }
-            (Some(module), _) => {
-                print!(" {module}");
-                if let Some(line) = record.line() {
-                    print!(":{line}");
-                }
-            }
-            _ => (),
-        }
-
-        print!("] ");
-
-        println!("{}", record.args());
-    }
-
-    fn flush(&self) {}
-}
-
-/// Sets up logging for the kernel
-fn init_log() {
-    log::set_logger(&KernelLogger).expect("Logging should have initialised");
-    log::set_max_level(log::LevelFilter::Trace);
-}
-
-/// Initialises the kernel and constructs a [`KernelState`] struct to represent it.
-///
-/// # Safety:
-/// This function may only be called once, and must be called with kernel privileges.
-/// The provided `boot_info` must be valid and correct.
-unsafe fn init(boot_info: &'static mut BootInfo) {
-    // SAFETY: This function is only called once. If the `physical_memory_offset` field of the BootInfo struct exists,
-    // then the bootloader will have mapped all of physical memory at that address.
-    let page_table = unsafe {
-        cpu::init_cpu(VirtAddr::new(
-            boot_info.physical_memory_offset.into_option().unwrap(),
-        ))
-    };
-
-    init_log();
-
-    KERNEL_STATE.page_table.init(page_table);
-    println!("Initialised page table");
-
-    println!(
-        "Physical memory offset: {:#x}",
-        boot_info.physical_memory_offset.into_option().unwrap()
-    );
-
-    // Get initrd and store in KERNEL_STATE
-    let init_rd = core::slice::from_raw_parts(
-        boot_info.ramdisk_addr.into_option().unwrap() as _,
-        boot_info.ramdisk_len as _,
-    );
-
-    *KERNEL_STATE.initrd.write() = Some(init_rd);
-
-    // SAFETY: The provided `boot_info` is correct
-    unsafe { cpu::init_frame_allocator(&boot_info.memory_regions) };
-
-    // SAFETY: This function is only called once.
-    unsafe { cpu::init_kernel_stack() }
-
-    println!("Initialised frame allocator");
-
-    // SAFETY: This function is only called once. The provided `boot_info` is correct, so so are `offset_page_table` and `frame_allocator`
-    unsafe { allocator::init_heap().expect("Initialising the heap should have succeeded") }
-
-    println!("Initialised heap");
-
-    init_graphics(boot_info.framebuffer.as_mut().unwrap());
-    println!("Initialised graphics");
-    flush();
-
-    // panic!("Test panic for stack backtrace");
-
-    // SAFETY: This function is only called once
-    unsafe {
-        cpu::init_interrupts();
-    }
-
-    // SAFETY: This function is only called once.
-    // The bootloader gets the rsdp pointer from the BIOS or UEFI so it is valid and accurate.
-    unsafe { acpi::init(boot_info.rsdp_addr.into_option().unwrap()) };
-
-    init_keybuffer();
-
-    println!("Initialising APIC");
-    flush();
-
-    // SAFETY: This function is only called once.
-    // TODO: This doesn't need unwrapping if the PIC is working
-    unsafe { cpu::interrupt_controllers::init_local_apic().unwrap() };
-
-    // SAFETY: This function is only called once.
-    // The core is set up to receive interrupts as `init_interrupts` has been called above.
-    unsafe { cpu::interrupt_controllers::init_io_apic().unwrap() };
-    flush();
-
-    // SAFETY: This function is only called once.
-    unsafe { cpu::init_ps2() };
-
-    // SAFETY: This function is only called once.
-    // unsafe { devices::init() };
-
-    println!("Finished initialising kernel");
-    flush();
-}
-
 /// The config struct to instruct the bootloader how to load the kernel
 const BOOT_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
@@ -326,7 +124,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // SAFETY:
     // This is the entry point for the program, so init() cannot have been run before.
     // This code runs with kernel privileges
-    unsafe { init(boot_info) };
+    unsafe { init::init(boot_info) };
 
     //x86_64::instructions::interrupts::disable();
     x86_64::instructions::interrupts::int3();

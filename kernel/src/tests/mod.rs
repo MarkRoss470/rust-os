@@ -32,6 +32,8 @@ pub fn exit_qemu(exit_code: QemuExitCode) -> ! {
 /// This function is called on panic in a test build.
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    x86_64::instructions::interrupts::disable();
+
     println!("{}", info);
 
     let stack_pointer_approx = info as *const _ as usize;
@@ -41,6 +43,12 @@ fn panic(info: &PanicInfo) -> ! {
         stack_pointer_approx
     );
     println!("In stack {:?}", cpu::gdt::get_stack(stack_pointer_approx));
+
+    #[cfg(debug_assertions)]
+    match crate::panic::backtrace::backtrace() {
+        Ok(_) => (),
+        Err(e) => println!("Error printing backtrace: {e:?}"),
+    }
 
     exit_qemu(QemuExitCode::Failed);
 }
@@ -67,7 +75,7 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // This is the entry point for the program, so init() cannot have been run before.
     // This code runs with kernel privileges
     unsafe {
-        init(boot_info);
+        init::init(boot_info);
     }
 
     // Calls the test harness which was re-exported in crate root
@@ -102,4 +110,9 @@ pub fn test_runner(tests: &[&dyn Testable]) {
 #[test_case]
 fn always_passes() {
     println!("Always passing test");
+}
+
+#[test_case]
+fn failure() {
+    panic!("Test failure panic")
 }
