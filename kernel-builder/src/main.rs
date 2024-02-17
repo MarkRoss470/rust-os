@@ -1,7 +1,7 @@
 use std::{
     fs,
-    io::{Read, Write},
-    path::PathBuf,
+    io::{self, Read, Write},
+    path::{Path, PathBuf},
     process::{ChildStdout, Command, ExitCode, Stdio},
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -14,39 +14,42 @@ use rayon::prelude::*;
 #[command(author="Mark Ross", version="0.1", about="Compiles and optionally runs the kernel", long_about = None)]
 struct Args {
     /// Runs the kernel using qemu after compiling it.
-    #[arg(long, action)]
+    #[arg(long, action, conflicts_with = "test")]
     run: bool,
 
-    /// Compiles the kernel in test mode and tests it.
-    #[arg(long, action)]
-    test: bool,
+    /// Compiles the kernel in test mode and tests it. Pass a space-separated list of numbers to only run those tests.
+    #[arg(long, action, num_args = 0..)]
+    test: Option<Vec<usize>>,
 
     /// Runs the kernel ready for a debugger to attach, with serial output written to the given file.
     /// Has no effect if not combined with --run.
-    #[arg(long)]
+    #[arg(long, value_name = "SERIAL_FILE")]
     debug: Option<String>,
 
     /// Gets qemu to write a log file to the given file
-    #[arg(long)]
+    #[arg(long, value_name = "FILE")]
     qemu_debug: Option<String>,
 
     /// Compiles the kernel in release mode.
     #[arg(long, action)]
     release: bool,
 
-    /// Adds a device when running qemu.
-    /// Has no effect if not combined with --run.  
+    /// Adds a device when running qemu using the -device flag.
+    /// Has no effect if not combined with --run or --test.  
     ///
     /// Example usage: `kernel-builder --run --qemu-device "pci-bridge,id=bridge0,chassis_nr=1"`
-    #[arg(long)]
+    #[arg(long, value_name = "SPEC")]
     qemu_device: Vec<String>,
 }
 
-/// This builder may be invoked with `pwd` = `project-root/kernel-builder` or just `project-root`.
+/// This builder may be invoked with `pwd` = `project-root/kernel-builder`, `project-root/kernel` or just `project-root`.
 /// This function computes the relative path to the `kernel` crate for either of these options.
 fn kernel_dir() -> &'static str {
-    if std::env::current_dir().unwrap().ends_with("kernel-builder") {
+    let current_dir = &std::env::current_dir().unwrap();
+    if current_dir.ends_with("kernel-builder") {
         "../kernel"
+    } else if current_dir.ends_with("kernel") {
+        "."
     } else {
         "kernel"
     }
@@ -61,9 +64,9 @@ fn prepare_cargo_command(args: &Args, dir: &str, subcommand: &str) -> Command {
     cargo_process.arg(subcommand).current_dir(dir);
 
     if args.release {
-        if args.test {
+        if args.test.is_some() {
             // This is a custom profile defined for the kernel which builds with optimisations and debug symbols
-            cargo_process.arg("--profile=release-with-debug"); 
+            cargo_process.arg("--profile=release-with-debug");
         } else {
             cargo_process.arg("--release");
         }
@@ -96,8 +99,8 @@ fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
     if test {
         c.arg("-device")
             .arg("isa-debug-exit,iobase=0xf4,iosize=0x04")
-            // .arg("-display")
-            // .arg("none")
+            .arg("-display")
+            .arg("none")
             .arg("-snapshot"); // Any writes to drives are discarded after the VM exits
     }
 
@@ -123,6 +126,31 @@ fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
     c
 }
 
+fn prepare_kernel_and_initrd(args: &Args, kernel_in: &Path, kernel_out: &Path, initrd_out: &Path) {
+    // Remove debugging symbols from the kernel because they'll be provided by the initrd
+    let mut objcopy_command = Command::new("objcopy");
+    objcopy_command
+        .arg("--strip-debug")
+        .arg(&kernel_in)
+        .arg(&kernel_out);
+
+    let objcopy_success = objcopy_command
+        .status()
+        .expect("Objcopy should have run successfully")
+        .success();
+
+    assert!(objcopy_success, "Objcopy should have run successfully");
+
+    if args.release {
+        // The bootloader crate doesn't like empty initrds, so put a todo message there
+        fs::write(&initrd_out, b"TODO: initrd for release builds")
+            .expect("Should have been able to create an initrd file");
+    } else {
+        fs::copy(&kernel_in, &initrd_out)
+            .expect("Should have been able to copy from kernel to initrd");
+    }
+}
+
 fn main() -> ExitCode {
     for (var, _) in std::env::vars() {
         if var.contains("CARGO") || var.contains("RUST") {
@@ -133,7 +161,7 @@ fn main() -> ExitCode {
     let args = &Args::parse();
 
     // If the --test flag is set, test the kernel instead
-    if args.test {
+    if args.test.is_some() {
         if args.run {
             panic!("--run and --test flags are mutually exclusive");
         }
@@ -167,25 +195,27 @@ fn main() -> ExitCode {
     // Create the directory to put kernel images, if it doesn't exist.
     fs::create_dir_all(&out_dir).expect("Should have been able to create output directory");
 
-    
+    let kernel_no_debug = out_dir.join("kernel");
+
+    // TODO: make initrd a proper file system.
+    // For now it's the kernel's debug symbols for debug builds, and empty on release
+    let initrd = out_dir.join("initrd");
+
+    prepare_kernel_and_initrd(args, &kernel, &kernel_no_debug, &initrd);
 
     // create a BIOS disk image
     let bios_path = out_dir.join("bios.img");
-    bootloader::BiosBoot::new(&kernel)
-        .set_ramdisk(&kernel)
+    bootloader::BiosBoot::new(&kernel_no_debug)
+        .set_ramdisk(&initrd)
         .create_disk_image(&bios_path)
         .expect("Should have been able to create BIOS image");
 
     // create a BIOS disk image
     let uefi_path = out_dir.join("uefi.img");
-    bootloader::UefiBoot::new(&kernel)
-        .set_ramdisk(&kernel)           
+    bootloader::UefiBoot::new(&kernel_no_debug)
+        .set_ramdisk(&initrd)
         .create_disk_image(&uefi_path)
         .expect("Should have been able to create UEFI image");
-
-    if args.release {
-        cargo_process.arg("--release");
-    }
 
     if args.run {
         prepare_qemu_command(args, uefi_path.to_str().unwrap(), false)
@@ -244,14 +274,31 @@ fn run_tests(args: &Args) -> ExitCode {
     // Parse the path to the test kernel
     let kernel = PathBuf::from(kernel_dir).join(test_bin);
 
-    // create a BIOS disk image
+    let out_dir = PathBuf::from(kernel_dir).join("images");
+
+    let kernel_no_debug = out_dir.join("kernel");
+
+    // TODO: make initrd a proper file system.
+    // For now it's the kernel's debug symbols for debug builds, and empty on release
+    let initrd = out_dir.join("initrd");
+
+    prepare_kernel_and_initrd(args, &kernel, &kernel_no_debug, &initrd);
+
+    // create a UEFI disk image
     let uefi_path = kernel.parent().unwrap().join("uefi.img");
     bootloader::UefiBoot::new(&kernel)
+        .set_ramdisk(&initrd)
         .create_disk_image(&uefi_path)
         .unwrap();
 
+    let test_nums = args.test.clone().unwrap();
+    if !test_nums.is_empty() {
+        return run_qemu_tests(test_nums, args, &uefi_path);
+    }
+
     // Run the kernel in qemu to ask it how many tests there are
-    let (mut qemu_command, mut stdin, chars) = run_qemu_test(args, uefi_path.to_str().unwrap());
+    let (mut qemu_command, mut stdin, chars) =
+        prepare_qemu_test(args, uefi_path.to_str().unwrap()).unwrap();
 
     // Send the 'count' command. The kernel should respond with a number of tests
     stdin
@@ -269,49 +316,41 @@ fn run_tests(args: &Args) -> ExitCode {
     // TODO: investigate why this isn't the same number as defined in the kernel
     assert_eq!(qemu_command.wait().unwrap().code().unwrap(), 33);
 
+    run_qemu_tests(0..num_tests, args, &uefi_path)
+}
+
+fn run_qemu_tests(
+    test_nums: impl IntoParallelIterator<Item = usize> + IntoIterator<Item = usize>,
+    args: &Args,
+    uefi_path: &Path,
+) -> ExitCode {
     // How many tests failed
     // This is atomic rather than just mutable because the following iterator is multi-threaded
     let failures = AtomicUsize::new(0);
+    let total = AtomicUsize::new(0);
 
     // Check each test in parallel
-    (0..num_tests).into_par_iter().for_each(|i| {
-        let (mut qemu_command, mut stdin, chars) = run_qemu_test(args, uefi_path.to_str().unwrap());
+    test_nums
+        .into_par_iter()
+        .try_for_each(|i| -> Result<(), io::Error> {
+            let success = run_qemu_test(i, args, &uefi_path)?;
+            total.fetch_add(1, Ordering::Relaxed);
 
-        // Send a 'run' command with the command number
-        stdin
-            .write_all(format!("run\n{i}\n").as_bytes())
-            .expect("Failed to write to stdin");
+            if !success {
+                failures.fetch_add(1, Ordering::Relaxed);
+            }
 
-        // Get the output of the rest of the kernel's execution so that it can be printed in case the test fails
-        let output = chars.rest();
-
-        // Extract the test name from the output
-        let test_name: Vec<u8> = output.split(|c| *c == b'\n').next().unwrap().to_vec();
-        let test_name = std::str::from_utf8(&test_name).unwrap().trim_end();
-
-        // Check that the test runner exited successfully
-        // TODO: investigate why this isn't the same number as defined in the kernel
-        if qemu_command.wait().unwrap().code().unwrap() == 33 {
-            // TODO: change these ANSI codes to something more portable
-            println!("Running {test_name}... [\x1b[32mOK\x1b[0m]");
-        } else {
-            // If the test fails, print its output in yellow to be more obvious
-            println!("{test_name}... [\x1b[31mERROR\x1b[0m]");
-            println!("\x1b[31mSerial output of failed test:\x1b[0m");
-            println!("\x1b[33m-----------------------------------");
-            println!("{}", String::from_utf8_lossy(&output));
-            println!("-----------------------------------\x1b[0m");
-
-            failures.fetch_add(1, Ordering::Relaxed);
-        }
-    });
+            Ok(())
+        })
+        .unwrap();
 
     let failures = failures.load(Ordering::Relaxed);
+    let total = total.load(Ordering::Relaxed);
 
     println!(
         "\n{} out of {} tests completed successfully",
-        num_tests - failures,
-        num_tests
+        total - failures,
+        total
     );
 
     if failures != 0 {
@@ -321,21 +360,73 @@ fn run_tests(args: &Args) -> ExitCode {
     }
 }
 
+fn run_qemu_test(i: usize, args: &Args, uefi_path: &Path) -> Result<bool, io::Error> {
+    let (mut qemu_command, mut stdin, chars) =
+        prepare_qemu_test(args, uefi_path.to_str().unwrap())?;
+
+    // Send a 'run' command with the command number
+    stdin
+        .write_all(format!("run\n{i}\n").as_bytes())
+        .expect("Failed to write to stdin");
+
+    // Get the output of the rest of the kernel's execution so that it can be printed in case the test fails
+    let output = chars.rest();
+
+    // Extract the test name from the output
+    let test_name: Vec<u8> = output.split(|c| *c == b'\n').next().unwrap().to_vec();
+    let test_name = std::str::from_utf8(&test_name).unwrap().trim_end();
+
+    // Check that the test runner exited successfully
+    // TODO: investigate why this isn't the same number as defined in the kernel
+    if qemu_command.wait().unwrap().code().unwrap() == 33 {
+        // TODO: change these ANSI codes to something more portable
+        println!("[{i:3}] Running {test_name}... [\x1b[32mOK\x1b[0m]");
+
+        Ok(true)
+    } else {
+        // Lock stdout to prevent another test's output from being in the middle of this multi-line print
+        let mut stdout = std::io::stdout().lock();
+
+        // If the test fails, print its output in yellow to be more obvious
+        writeln!(
+            stdout,
+            "[{i:3}] Running {test_name}... [\x1b[31mERROR\x1b[0m]"
+        )?;
+        writeln!(stdout, "\x1b[31mSerial output of failed test:\x1b[0m")?;
+        writeln!(stdout, "\x1b[33m-----------------------------------")?;
+        writeln!(stdout, "{}", String::from_utf8_lossy(&output))?;
+        writeln!(stdout, "-----------------------------------\x1b[0m")?;
+
+        if args.release {
+            if let Some(runner) = std::env::current_exe().unwrap().to_str() {
+                writeln!(
+                    stdout,
+                    "\x1b[31mRun in debug mode for a stack backtrace: `{runner} --test {i}`\x1b[0m"
+                )?;
+            }
+        }
+
+        Ok(false)
+    }
+}
+
 /// Launches the kernel in qemu from the image at the given path and waits for it to write a message to stdout
 /// indicating it's listening for a test command.
-fn run_qemu_test(
+fn prepare_qemu_test(
     args: &Args,
     uefi_path: &str,
-) -> (
-    std::process::Child,
-    std::process::ChildStdin,
-    ChildStdoutIter,
-) {
+) -> Result<
+    (
+        std::process::Child,
+        std::process::ChildStdin,
+        ChildStdoutIter,
+    ),
+    io::Error,
+> {
     let mut qemu_command = prepare_qemu_command(args, uefi_path, true)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .spawn()?;
 
     // Get handles to stdout
     let stdout = qemu_command.stdout.take().expect("Failed to open stdout");
@@ -354,7 +445,7 @@ fn run_qemu_test(
         break;
     }
 
-    (qemu_command, stdin, chars)
+    Ok((qemu_command, stdin, chars))
 }
 
 /// A wrapper around a child process, which exposes an iterator over the process's stdout.
