@@ -10,6 +10,8 @@ Alternatively, run `cargo run -- --run` to run the kernel in qemu after building
 
 If you are using vscode, the config files in `.vscode` set up a launch config to debug the kernel, but this requires the "Native Debug" extension for vscode. 
 
+I have only tested building the kernel on linux. Building the kernel also needs some commands to be present on the host system, such as `gcc`, `objcopy`, and some other utilities. The kernel runner and tester also require `qemu-system-x86_64`.
+
 ## Features
 
 The OS currently has very few user-facing features, as I am working on hardware support (e.g. PCI, USB) before things like processes and syscalls.
@@ -23,10 +25,15 @@ Current features:
    - Enumerating devices
    - Powering off the system
 
+Current development features:
+ - Automated test runner using qemu
+ - Ability to redirect kernel logs/output to a file when running in qemu
+ - Stack backtraces for kernel panics when running in debug mode
+
 ## Features In Development
 
 - Further ACPI support using the ACPICA C library. I am writing my own rust bindings to this library as no existing bindings exist. The source code for these bindings are [here](https://github.com/MarkRoss470/acpica-rust-bindings).
-- XHCI support for interacting with USB devices. This is currently blocked by support for ACPI as this is needed to handle PCI interrupts, which is necessary to support XHCI
+- XHCI support for interacting with USB devices. The kernel can currently enumerate XHCI controllers and send no-op packets, but not exchange data with USB devices.
 
 ## Screenshots
 
@@ -37,6 +44,9 @@ Enumerating PCI devices:
 Enumerating ACPI devices:
 
 ![The operating system running under qemu. The screen shows many lines of text showing the virtual devices exposed by AML code.](images/enumerating-acpi-devices.png)
+
+Stack backtraces:
+![The operating system running under qemu. The screen shows the user entering the 'panic' command, followed by the kernel's panic output. The output contains a stack backtrace, with each frame containing the instruction pointer, function name, and the source file and line.](images/stack-backtraces.png)
 
 ## Credits
 
