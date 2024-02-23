@@ -42,19 +42,21 @@ impl Log for KernelLogger {
 
         print!("[");
 
+        let colour = match record.level() {
+            log::Level::Error => Colour::RED,
+            log::Level::Warn => Colour::YELLOW,
+            log::Level::Info => Colour::WHITE,
+            log::Level::Debug => Colour::BLUE,
+            log::Level::Trace => Colour::GREEN,
+        };
+
+        if let Ok(mut w) = WRITER.try_locked_if_init() {
+            w.set_colour(colour);
+        }
+
         let level_str = match record.level() {
-            log::Level::Error => {
-                if let Ok(mut w) = WRITER.try_locked_if_init() {
-                    w.set_colour(Colour::RED);
-                }
-                "ERROR"
-            }
-            log::Level::Warn => {
-                if let Ok(mut w) = WRITER.try_locked_if_init() {
-                    w.set_colour(Colour::YELLOW);
-                }
-                "WARNING"
-            }
+            log::Level::Error => "ERROR",
+            log::Level::Warn => "WARNING",
             log::Level::Info => "INFO",
             log::Level::Debug => "DEBUG",
             log::Level::Trace => "TRACE",
