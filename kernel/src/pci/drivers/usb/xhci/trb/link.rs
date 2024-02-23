@@ -53,7 +53,7 @@ pub struct LinkTrbFlags {
 ///
 /// [Control]: super::command_ring::CommandTrbRing
 /// [`toggle_cycle`]: LinkTrbFlags::cycle
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct LinkTrb {
     /// The start address of the new ring segment
     pub pointer: PhysAddr,
@@ -65,7 +65,7 @@ pub struct LinkTrb {
 
 impl LinkTrb {
     /// Converts the TRB to the data written to a TRB ring
-    pub fn to_parts(&self, cycle: bool) -> [u32; 4] {
+    pub fn to_parts(self, cycle: bool) -> [u32; 4] {
         assert!(self.pointer.is_aligned(16u64));
 
         let pointer = self.pointer.as_u64();

@@ -5,8 +5,9 @@
 //! * Transfer TRB rings (TODO: link), which contain [`TransferTrb`]s
 //! * [`EventTrbRing`]s, which contain [`EventTrb`]s
 
-use self::{link::LinkTrb, normal::NormalTrb};
+use self::{command::slot::{DisableSlotTrb, EnableSlotTrb}, link::LinkTrb, normal::NormalTrb};
 
+pub mod command;
 mod command_ring;
 pub mod event;
 mod event_ring;
@@ -22,7 +23,7 @@ pub use event_ring::EventTrbRing;
 /// This enum only holds the type of TRB, not any data that they hold - see [`CommandTrb`], [`TransferTrb`], and [`EventTrb`].
 ///
 /// [this table]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A518%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C89%2C513%2C0%5D
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(clippy::missing_docs_in_private_items)]
 enum TrbType {
     Normal,
@@ -235,77 +236,6 @@ impl TransferTrb {
             TransferTrb::Link(link) => link.chain(),
             TransferTrb::EventData => todo!(),
             TransferTrb::NoOp => todo!(),
-        }
-    }
-}
-
-/// A TRB on the [`CommandTrbRing`].
-///
-/// This gives the controller a command to execute, used to manage slots, devices, and connections.
-///
-/// See the spec section [6.4.3] for more info.
-///
-/// [6.4.3]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A494%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C169%2C0%5D
-#[derive(Debug)]
-#[allow(clippy::missing_docs_in_private_items)] // TODO: add docs with the corresponding structs
-pub enum CommandTrb {
-    /// A [`LinkTrb`]
-    Link(LinkTrb),
-
-    EnableSlot,
-    DisableSlot,
-    AddressDevice,
-    ConfigureEndpoint,
-    EvaluateContext,
-    ResetEndpoint,
-    StopEndpoint,
-    SetTRDequeuePointer,
-    ResetDevice,
-    ForceEvent,
-    NegotiateBandwidth,
-    SetLatencyToleranceValue,
-    GetPortBandwidth,
-    ForceHeader,
-    /// A command which does nothing except cause the controller to send a [`CommandCompletion`] event.
-    ///
-    /// This is used to test that the command and event rings are set up properly
-    ///
-    /// [`CommandCompletion`]: event::EventTrb::CommandCompletion
-    NoOp,
-    GetExtendedProperty,
-    SetExtendedProperty,
-}
-
-impl CommandTrb {
-    /// Converts the TRB to the data written to a TRB ring
-    pub fn to_parts(&self, cycle: bool) -> [u32; 4] {
-        match self {
-            CommandTrb::Link(link) => link.to_parts(cycle),
-            CommandTrb::EnableSlot => todo!(),
-            CommandTrb::DisableSlot => todo!(),
-            CommandTrb::AddressDevice => todo!(),
-            CommandTrb::ConfigureEndpoint => todo!(),
-            CommandTrb::EvaluateContext => todo!(),
-            CommandTrb::ResetEndpoint => todo!(),
-            CommandTrb::StopEndpoint => todo!(),
-            CommandTrb::SetTRDequeuePointer => todo!(),
-            CommandTrb::ResetDevice => todo!(),
-            CommandTrb::ForceEvent => todo!(),
-            CommandTrb::NegotiateBandwidth => todo!(),
-            CommandTrb::SetLatencyToleranceValue => todo!(),
-            CommandTrb::GetPortBandwidth => todo!(),
-            CommandTrb::ForceHeader => todo!(),
-            CommandTrb::NoOp => [
-                0,
-                0,
-                0,
-                GenericTrbFlags::new()
-                    .with_cycle(cycle)
-                    .with_trb_type(TrbType::NoOpCommand)
-                    .into(),
-            ],
-            CommandTrb::GetExtendedProperty => todo!(),
-            CommandTrb::SetExtendedProperty => todo!(),
         }
     }
 }
