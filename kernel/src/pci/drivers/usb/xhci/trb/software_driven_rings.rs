@@ -1,4 +1,4 @@
-//! The [`CommandTrbRing`] type
+//! The [`CommandTrbRing`] and [`TransferTrbRing`] types
 
 use core::cmp::Ordering;
 
@@ -7,44 +7,44 @@ use x86_64::PhysAddr;
 
 use crate::{
     allocator::PageBox,
-    pci::drivers::usb::xhci::trb::{link::LinkTrb, CommandTrb},
+    pci::drivers::usb::xhci::trb::{command::CommandTrb, link::LinkTrb},
 };
 
-use super::RingFullError;
+use super::{RingFullError, TransferTrb};
 
-/// The _Command TRB Ring_
-///
-/// This ring contains [`CommandTrb`]s for the controller to execute.
+/// A type which is used for the implementation of [`CommandTrbRing`] and [`TransferTrbRing`]
 #[derive(Debug)]
-pub struct CommandTrbRing {
+struct SoftwareDrivenTrbRing {
     /// The page where the ring is in memory
     page: PageBox,
+
     /// The index into the ring to write new TRBs
     enqueue: usize,
 
     /// The value of `cycle` to write for new TRBs
     cycle_state: bool,
+
     /// The index where the controller is reading TRBs.
     ///
-    /// When the controller reads a [`CommandTrb`], it writes a [Command Completion] [`EventTrb`] to an
+    /// When the controller reads a TRB, it writes a [Command Completion] [`EventTrb`] to an
     /// [`EventTrbRing`], indicating that the TRB has been received. The address of the TRB is passed to [`update_dequeue`],
     /// which updates this field.
     ///
     /// [Command Completion]: super::event::command_completion::CommandCompletionTrb
     /// [`EventTrb`]: super::event::EventTrb
     /// [`EventTrbRing`]: super::event_ring::EventTrbRing
-    /// [`update_dequeue`]: CommandTrbRing::update_dequeue
+    /// [`update_dequeue`]: SoftwareDrivenTrbRing::update_dequeue
     dequeue: usize,
 }
 
-impl CommandTrbRing {
+impl SoftwareDrivenTrbRing {
     /// The total length of the command ring including the link TRB
-    pub const TOTAL_LENGTH: usize = 0x1000 / 16;
+    const TOTAL_LENGTH: usize = 0x1000 / 16;
     /// The number of usable TRBs in the ring
     const USABLE_LENGTH: usize = Self::TOTAL_LENGTH - 1;
 
-    /// Allocates a new [`CommandTrbRing`]
-    pub fn new() -> Self {
+    /// Allocates a new [`SoftwareDrivenTrbRing`]
+    fn new() -> Self {
         Self {
             page: PageBox::new_zeroed(),
             enqueue: 0,
@@ -55,7 +55,7 @@ impl CommandTrbRing {
     }
 
     /// Gets the physical address of the start of the first segment of the ring
-    pub fn ring_start_addr(&self) -> PhysAddr {
+    fn ring_start_addr(&self) -> PhysAddr {
         self.page.phys_frame().start_address()
     }
 
@@ -114,7 +114,7 @@ impl CommandTrbRing {
     ///
     /// This value is only accurate if [`dequeue`] is up-to-date.
     ///
-    /// [`dequeue`]: CommandTrbRing::dequeue
+    /// [`dequeue`]: SoftwareDrivenTrbRing::dequeue
     fn trbs_in_buffer(&self) -> usize {
         match self.enqueue.cmp(&self.dequeue) {
             Ordering::Equal => 0, // If enqueue == dequeue, len == 0
@@ -127,7 +127,7 @@ impl CommandTrbRing {
     ///
     /// This value is only accurate if [`dequeue`] is up-to-date.
     ///
-    /// [`dequeue`]: CommandTrbRing::dequeue
+    /// [`dequeue`]: SoftwareDrivenTrbRing::dequeue
     fn free_space(&self) -> usize {
         Self::USABLE_LENGTH - self.trbs_in_buffer()
     }
@@ -140,7 +140,10 @@ impl CommandTrbRing {
     ///
     /// # Safety
     /// * The caller is responsible for the behaviour of the controller in response to this TRB
-    pub unsafe fn enqueue(&mut self, trb: CommandTrb) -> Result<PhysAddr, RingFullError> {
+    unsafe fn enqueue(
+        &mut self,
+        trb: impl FnOnce(bool) -> [u32; 4],
+    ) -> Result<PhysAddr, RingFullError> {
         if self.free_space() == 0 {
             return Err(RingFullError);
         }
@@ -151,7 +154,7 @@ impl CommandTrbRing {
         // The TRB at the enqueue pointer is owned by the OS as the ring contains free space
         // The caller is responsible for the behaviour of the controller in response to this TRB
         unsafe {
-            self.write(self.enqueue, trb.to_parts(self.cycle_state));
+            self.write(self.enqueue, trb(self.cycle_state));
         }
 
         self.enqueue += 1;
@@ -179,10 +182,114 @@ impl CommandTrbRing {
     ///
     /// [`command_trb_pointer`]: super::event::command_completion::CommandCompletionTrb
     /// [`CommandCompletion`]: super::EventTrb::CommandCompletion
-    pub unsafe fn update_dequeue(&mut self, dequeue: PhysAddr) {
+    unsafe fn update_dequeue(&mut self, dequeue: PhysAddr) {
+        assert!(
+            dequeue >= self.ring_start_addr(),
+            "New dequeue pointer was outside the ring: address was too small. Dequeue: {dequeue:p}, Ring start: {:p}",
+            self.ring_start_addr()
+        );
+
         let acknowledged = ((dequeue - self.ring_start_addr()) / 16) as usize;
+
+        assert!(
+            acknowledged < Self::USABLE_LENGTH,
+            "New dequeue pointer was outside the ring: address was too large. Dequeue: {dequeue:p}, Ring start: {:p}",
+            self.ring_start_addr()
+        );
 
         // The dequeue pointer is one TRB on from the acknowledged TRB, but needs to wrap around the end of the ring.
         self.dequeue = (acknowledged + 1) % Self::TOTAL_LENGTH;
+    }
+}
+
+/// The _Command TRB Ring_
+///
+/// This ring contains [`CommandTrb`]s for the controller to execute.
+#[derive(Debug)]
+pub struct CommandTrbRing(SoftwareDrivenTrbRing);
+
+impl CommandTrbRing {
+    /// The total length of the command ring including the link TRB
+    pub const TOTAL_LENGTH: usize = SoftwareDrivenTrbRing::TOTAL_LENGTH;
+
+    /// Allocates a new [`CommandTrbRing`]
+    pub fn new() -> Self {
+        Self(SoftwareDrivenTrbRing::new())
+    }
+
+    /// Gets the physical address of the start of the first segment of the ring
+    pub fn ring_start_addr(&self) -> PhysAddr {
+        self.0.ring_start_addr()
+    }
+
+    /// Writes a TRB to the buffer.
+    ///
+    /// This function does not ring the host controller doorbell, so the caller must do so to inform the controller to process the TRB.
+    ///
+    /// Returns the physical address of the queued TRB, to identify this TRB in future event TRBs.
+    ///
+    /// # Safety
+    /// * The caller is responsible for the behaviour of the controller in response to this TRB
+    pub unsafe fn enqueue(&mut self, trb: CommandTrb) -> Result<PhysAddr, RingFullError> {
+        // SAFETY: This is just a wrapper function, so the safety requirements are the same.
+        unsafe { self.0.enqueue(|cycle| trb.to_parts(cycle)) }
+    }
+
+    /// Updates the ring's dequeue pointer
+    ///
+    /// # Safety
+    /// * The passed address must have been read from the [`command_trb_pointer`] field of a [`CommandCompletion`] TRB.
+    ///
+    /// [`command_trb_pointer`]: super::event::command_completion::CommandCompletionTrb
+    /// [`CommandCompletion`]: super::EventTrb::CommandCompletion
+    pub unsafe fn update_dequeue(&mut self, dequeue: PhysAddr) {
+        // SAFETY: This is just a wrapper function, so the safety requirements are the same.
+        unsafe { self.0.update_dequeue(dequeue) }
+    }
+}
+
+/// The _Transfer TRB Ring_
+///
+/// This ring contains [`TransferTrb`]s for the controller to execute.
+#[derive(Debug)]
+pub struct TransferTrbRing(SoftwareDrivenTrbRing);
+
+impl TransferTrbRing {
+    /// The total length of the command ring including the link TRB
+    pub const TOTAL_LENGTH: usize = SoftwareDrivenTrbRing::TOTAL_LENGTH;
+
+    /// Allocates a new [`CommandTrbRing`]
+    pub fn new() -> Self {
+        Self(SoftwareDrivenTrbRing::new())
+    }
+
+    /// Gets the physical address of the start of the first segment of the ring
+    pub fn ring_start_addr(&self) -> PhysAddr {
+        self.0.ring_start_addr()
+    }
+
+    /// Writes a TRB to the buffer.
+    ///
+    /// This function does not ring the host controller doorbell, so the caller must do so to inform the controller to process the TRB.
+    ///
+    /// Returns the physical address of the queued TRB, to identify this TRB in future event TRBs.
+    ///
+    /// # Safety
+    /// * The caller is responsible for the behaviour of the controller in response to this TRB
+    pub unsafe fn enqueue(&mut self, trb: TransferTrb) -> Result<PhysAddr, RingFullError> {
+        // SAFETY: This is just a wrapper function, so the safety requirements are the same.
+        unsafe { self.0.enqueue(|cycle| trb.to_parts(cycle)) }
+    }
+
+    /// Updates the ring's dequeue pointer
+    ///
+    /// # Safety
+    /// * The passed address must have been read from the [`command_trb_pointer`] field of a [`CommandCompletion`] TRB.
+    ///
+    /// [`command_trb_pointer`]: super::event::command_completion::CommandCompletionTrb
+    /// [`CommandCompletion`]: super::EventTrb::CommandCompletion
+    pub unsafe fn update_dequeue(&mut self, dequeue: PhysAddr) {
+        // SAFETY: This is just a wrapper function, so the safety requirements are the same.
+        unsafe { self.0.update_dequeue(dequeue) }
     }
 }

@@ -5,16 +5,16 @@
 //! * Transfer TRB rings (TODO: link), which contain [`TransferTrb`]s
 //! * [`EventTrbRing`]s, which contain [`EventTrb`]s
 
-use self::{command::slot::{DisableSlotTrb, EnableSlotTrb}, link::LinkTrb, normal::NormalTrb};
+use self::{link::LinkTrb, normal::NormalTrb};
 
 pub mod command;
-mod command_ring;
+mod software_driven_rings;
 pub mod event;
 mod event_ring;
 mod link;
 pub mod normal;
 
-pub use command_ring::CommandTrbRing;
+pub use software_driven_rings::CommandTrbRing;
 pub use event::EventTrb;
 pub use event_ring::EventTrbRing;
 
