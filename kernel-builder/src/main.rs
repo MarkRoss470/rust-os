@@ -203,14 +203,8 @@ fn main() -> ExitCode {
 
     prepare_kernel_and_initrd(args, &kernel, &kernel_no_debug, &initrd);
 
-    // create a BIOS disk image
-    let bios_path = out_dir.join("bios.img");
-    bootloader::BiosBoot::new(&kernel_no_debug)
-        .set_ramdisk(&initrd)
-        .create_disk_image(&bios_path)
-        .expect("Should have been able to create BIOS image");
 
-    // create a BIOS disk image
+    // create a UEFI disk image
     let uefi_path = out_dir.join("uefi.img");
     bootloader::UefiBoot::new(&kernel_no_debug)
         .set_ramdisk(&initrd)
@@ -225,7 +219,7 @@ fn main() -> ExitCode {
             .unwrap();
     }
 
-    println!("{}", bios_path.to_str().unwrap());
+    // println!("{}", bios_path.to_str().unwrap());
 
     ExitCode::SUCCESS
 }
