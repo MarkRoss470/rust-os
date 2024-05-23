@@ -10,7 +10,7 @@
 // For interrupts
 #![feature(abi_x86_interrupt)]
 // For checking pointer alignment
-#![feature(pointer_is_aligned)]
+#![feature(pointer_is_aligned_to)]
 // Nice-to-have int methods, such as `div_ceil`
 #![feature(int_roundings)]
 // Set up warnings and lints

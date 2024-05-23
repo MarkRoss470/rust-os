@@ -184,9 +184,9 @@ fn main() -> ExitCode {
     assert_eq!(exit_code, 0);
 
     let kernel_path = if args.release {
-        "target/x86_64-os/release/os"
+        "target/x86_64-unknown-none/release/os"
     } else {
-        "target/x86_64-os/debug/os"
+        "target/x86_64-unknown-none/debug/os"
     };
 
     let kernel = PathBuf::from(kernel_dir).join(kernel_path);
