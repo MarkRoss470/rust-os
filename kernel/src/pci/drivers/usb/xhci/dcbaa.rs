@@ -9,8 +9,9 @@ use x86_64::PhysAddr;
 use crate::allocator::PageBox;
 
 use super::{
+    capability_registers::CapabilityRegisters,
     contexts::{device_context::OwnedDeviceContext, ContextSize},
-    operational_registers::SupportedPageSize,
+    operational_registers::{OperationalRegisters, SupportedPageSize},
     scratchpad::ScratchpadBufferArray,
 };
 
@@ -38,6 +39,36 @@ pub struct DeviceContextBaseAddressArray {
 }
 
 impl DeviceContextBaseAddressArray {
+    /// Allocates a new DCBAA using the values in the given registers.
+    /// 
+    /// # Safety
+    /// * The given `capability` and `operational` registers must be valid registers from the same controller.
+    pub unsafe fn from_registers(
+        capability: &CapabilityRegisters,
+        operational: &OperationalRegisters,
+    ) -> DeviceContextBaseAddressArray {
+        let len = capability
+            .structural_parameters_1()
+            .max_device_slots()
+            .into();
+
+        let page_size = operational.read_page_size();
+
+        let context_size = capability
+            .capability_parameters_1()
+            .context_size();
+
+        let max_scratchpad_buffers = capability
+            .structural_parameters_2()
+            .max_scratchpad_buffers()
+            .into();
+
+        // SAFETY: `len`, `page_size`, `context_size`, and `max_scratchpad_buffers` are valid
+        unsafe {
+            DeviceContextBaseAddressArray::new(len, page_size, context_size, max_scratchpad_buffers)
+        }
+    }
+
     /// Allocates a new DCBAA with the given length
     ///
     /// # Safety

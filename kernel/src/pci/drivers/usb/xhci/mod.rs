@@ -5,43 +5,33 @@
 // TODO: actually fix these warnings instead of ignoring them
 #![allow(dead_code)]
 
-use crate::{
-    global_state::KERNEL_STATE,
-    pci::{
-        bar::Bar,
-        classcodes::ClassCode,
-        devices::PciFunction,
-        registers::{HeaderType, PciGeneralDeviceHeader},
-        PciMappedFunction,
-    },
-};
-
-use crate::pci::classcodes::{SerialBusControllerType, USBControllerType};
+use crate::pci::devices::PciFunction;
 
 use alloc::boxed::Box;
-use capability_registers::CapabilityRegisters;
 use log::{debug, error};
-use x86_64::{PhysAddr, VirtAddr};
+use x86_64::PhysAddr;
 
 use self::{
+    capability_registers::CapabilityRegisters,
     dcbaa::DeviceContextBaseAddressArray,
     doorbell::DoorbellRegisters,
     interrupter::Interrupter,
-    operational_registers::{
-        CommandRingControl, DeviceContextBaseAddressArrayPointer, OperationalRegisters,
-    },
+    operational_registers::OperationalRegisters,
     runtime_registers::RuntimeRegisters,
-    trb::{event::command_completion::CompletionCode, CommandTrbRing, RingFullError},
-    trb::{CommandTrb, EventTrb},
+    trb::{
+        command::CommandTrb, event::command_completion::CompletionCode, CommandTrbRing, EventTrb,
+        RingFullError,
+    },
 };
 
 mod capability_registers;
 mod contexts;
 mod dcbaa;
 mod doorbell;
+mod init;
 mod interrupter;
-pub mod operational_registers;
-pub mod runtime_registers;
+mod operational_registers;
+mod runtime_registers;
 mod scratchpad;
 mod trb;
 
@@ -70,364 +60,24 @@ pub struct XhciController {
 }
 
 impl XhciController {
-    /// Initialises the given XHCI controller, following the process defined in the xHCI specification section [4.2]
+    /// Enters the main loop of the controller. This is called automatically by [`init`]
+    /// when the controller is set up.
     ///
-    /// # Safety:
-    /// This function may only be called once per xHCI controller
-    ///
-    /// [4.2]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A87%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C374%2C0%5D
-    pub async unsafe fn init(mut function: PciMappedFunction) {
-        debug!("Initialising XHCI controller at {}", function.function);
-
-        debug!("{}: Parsing header", function.function);
-        let general_device_header = parse_header(&function);
-
-        debug!("{}: Mapping MMIO", function.function);
-
-        // SAFETY: This function is only called once per controller.
-        // No `Bar`s exist at this point in the function.
-        let mapped_mmio = unsafe { map_mmio(general_device_header, &function) };
-
-        debug!("{}: Finding registers", function.function);
-
-        // SAFETY: mapped_mmio is the mapped MMIO.
-        // This function is only called once per controller.
-        let (
-            capability_registers,
-            mut operational_registers,
-            mut runtime_registers,
-            doorbell_registers,
-        ) = unsafe { Self::find_registers(mapped_mmio) };
-
-        debug!("{}: Sending Host Controller Reset", function.function);
-
-        // SAFETY: The controller hasn't been set up yet so nothing is relying on the state being preserved
-        unsafe {
-            Self::reset_and_wait(&mut operational_registers).await;
-        }
-
-        debug!("{}: Enabling ports", function.function);
-
-        Self::enable_all_ports(&capability_registers, &mut operational_registers);
-
-        debug!("{}: Allocating DCBAA", function.function);
-
-        let dcbaa = {
-            let len = capability_registers
-                .structural_parameters_1()
-                .max_device_slots()
-                .into();
-            let page_size = operational_registers.read_page_size();
-            let uses_64_byte_context_structs = capability_registers
-                .capability_parameters_1()
-                .uses_64_byte_context_structs();
-            let max_scratchpad_buffers = capability_registers
-                .structural_parameters_2()
-                .max_scratchpad_buffers()
-                .into();
-
-            // SAFETY: `len`, `page_size`, `uses_64_byte_context_struct`, and `max_scratchpad_buffers` are valid
-            unsafe {
-                DeviceContextBaseAddressArray::new(
-                    len,
-                    page_size,
-                    uses_64_byte_context_structs,
-                    max_scratchpad_buffers,
-                )
-            }
-        };
-
-        debug!("{}: Allocating command ring", function.function);
-
-        let command_ring = CommandTrbRing::new();
-
-        operational_registers.write_device_context_base_address_array_pointer(
-            DeviceContextBaseAddressArrayPointer::from_pointer(dcbaa.array_addr()),
-        );
-
-        debug!("{}: Writing command ring pointer", function.function);
-
-        // Check that the command ring isn't running before writing pointer
-        assert!(!operational_registers
-            .read_command_ring_control()
-            .command_ring_running());
-
-        operational_registers.write_command_ring_control(
-            CommandRingControl::new()
-                .with_ring_cycle_state(true)
-                .with_command_ring_pointer(command_ring.ring_start_addr()),
-        );
-
-        // SAFETY: This function is only called once per controller
-        let interrupters =
-            unsafe { Self::init_interrupters(&capability_registers, &mut runtime_registers) };
-
-        // SAFETY: This function is only called once per controller.
-        // No `Bar`s exist at this point in the function.
-        unsafe {
-            init_msi(&mut function);
-        }
-
-        let mut controller = Self {
-            function: function.function,
-            capability_registers,
-            operational_registers,
-            runtime_registers,
-            dcbaa,
-            command_ring,
-            interrupters,
-            doorbell_registers,
-        };
-
-        debug!("{}: Enabling controller", function.function);
-
-        // Make sure `host_controller_halted` is set before starting controller
-        assert!(controller
-            .operational_registers
-            .read_usb_status()
-            .host_controller_halted());
-
-        controller.operational_registers.write_usb_command(
-            controller
-                .operational_registers
-                .read_usb_command()
-                .with_interrupts_enabled(true) // TODO: real interrupts
-                .with_wrap_events_enabled(true)
-                .with_enabled(true),
-        );
-
-        // Wait for `host_controller_halted` to be unset
-        // TODO: timeout
-        loop {
-            if !controller
-                .operational_registers
-                .read_usb_status()
-                .host_controller_halted()
-            {
-                break;
-            }
-
-            futures::pending!();
-        }
-
-        controller
-            .doorbell_registers
-            .host_controller_doorbell()
-            .ring();
-
-        debug!("{}: Testing command and event rings", function.function);
-
-        controller.test_command_ring().await;
-
-        debug!("{}: Polling event ring", function.function);
-
+    /// [`init`]: XhciController::init
+    async fn main_loop(&mut self) -> ! {
         loop {
             futures::pending!();
 
-            if let Some(trb) = controller.read_event_trb(0) {
-                debug!("{trb:?}");
-            }
-        }
-    }
-
-    /// Locates the different register types in the given MMIO region.
-    ///
-    /// # Safety
-    /// * `mapped_mmio` must be the MMIO mapping for the first bar of the XHCI controller at `function`
-    /// * This function may only be called once per controller
-    unsafe fn find_registers(
-        mapped_mmio: VirtAddr,
-    ) -> (
-        CapabilityRegisters,
-        OperationalRegisters,
-        RuntimeRegisters,
-        DoorbellRegisters,
-    ) {
-        // SAFETY: The XHCI capability registers struct is guaranteed to be at this location in memory.
-        let capability_registers = unsafe { CapabilityRegisters::new(mapped_mmio) };
-
-        debug!(
-            "Operational registers offset: {:#x}",
-            capability_registers.capability_register_length()
-        );
-        debug!(
-            "Runtime registers offset: {:#x}",
-            capability_registers.runtime_register_space_offset()
-        );
-        debug!(
-            "Doorbell registers offset: {:#x}",
-            capability_registers.doorbell_offset()
-        );
-
-        // SAFETY: The XHCI operational registers struct is guaranteed to be at this location in memory.
-        let operational_registers = unsafe {
-            let ptr = mapped_mmio + capability_registers.capability_register_length() as u64;
-
-            OperationalRegisters::new(ptr, &capability_registers)
-        };
-
-        // SAFETY: The XHCI runtime registers struct is guaranteed to be at this location in memory.
-        let runtime_registers = unsafe {
-            let ptr = mapped_mmio + capability_registers.runtime_register_space_offset();
-
-            RuntimeRegisters::new(ptr)
-        };
-
-        // SAFETY: The XHCI doorbell registers are guaranteed to be at this location in memory.
-        // No other `DoorbellRegisters` struct exists as this function is only called once
-        // The passed `max_device_slots` is accurate
-        let doorbell_registers = unsafe {
-            let ptr = mapped_mmio + capability_registers.doorbell_offset();
-
-            DoorbellRegisters::new(
-                ptr,
-                capability_registers
-                    .structural_parameters_1()
-                    .max_device_slots()
-                    .into(),
-            )
-        };
-
-        (
-            capability_registers,
-            operational_registers,
-            runtime_registers,
-            doorbell_registers,
-        )
-    }
-
-    /// Writes `true` to [`UsbCommand::reset`][operational_registers::UsbCommand::reset],
-    /// and then waits for the controller to write `false` back, signalling the reset has complete.
-    ///
-    /// # Safety
-    /// This function will completely reset the controller, so the caller needs to ensure no code
-    /// is relying on the state of the controller being preserved.
-    async unsafe fn reset_and_wait(operational_registers: &mut OperationalRegisters) {
-        let mut usb_command = operational_registers.read_usb_command();
-        usb_command.set_reset(true);
-        operational_registers.write_usb_command(usb_command);
-
-        loop {
-            futures::pending!();
-
-            let usb_command = &operational_registers.read_usb_command();
-            let usb_status = &operational_registers.read_usb_status();
-            if !usb_command.reset() && !usb_status.controller_not_ready() {
-                break;
-            }
-        }
-    }
-
-    /// Sets the value of [`max_device_slots_enabled`] to [`max_ports`].
-    ///
-    /// [`max_device_slots_enabled`]: operational_registers::ConfigureRegister::max_device_slots_enabled
-    /// [`max_ports`]: capability_registers::StructuralParameters1::max_ports
-    fn enable_all_ports(
-        capability_registers: &CapabilityRegisters,
-        operational_registers: &mut OperationalRegisters,
-    ) {
-        let structural_parameters_1 = capability_registers.structural_parameters_1();
-
-        let mut configure_register = operational_registers.read_configure();
-        // Set all ports to be usable
-        configure_register.set_max_device_slots_enabled(structural_parameters_1.max_ports());
-        operational_registers.write_configure(configure_register);
-    }
-
-    /// Initialises the [`Interrupter`] array in the runtime registers for this controller.
-    ///
-    /// # Safety
-    /// This function may only be called once per controller
-    unsafe fn init_interrupters(
-        capability_registers: &CapabilityRegisters,
-        runtime_registers: &mut RuntimeRegisters,
-    ) -> Box<[Interrupter]> {
-        let max_interrupters = capability_registers
-            .structural_parameters_1()
-            .max_interrupters();
-
-        (0..max_interrupters)
-            .map(|i| {
-                // SAFETY: This function is only called once, so no other `InterrupterRegisterSet` exists
-                let mut interrupter =
-                    unsafe { Interrupter::new(runtime_registers.interrupter(i as _)) };
-
-                // SAFETY: This enables interrupts for this interrupter
-                unsafe {
-                    interrupter.registers.set_interrupter_management(
-                        interrupter
-                            .registers
-                            .read_interrupter_management()
-                            .with_interrupt_enable(true),
-                    );
-                }
-
-                #[allow(clippy::let_and_return)] // TODO: remove when above code is un-commented
-                interrupter
-            })
-            .collect()
-    }
-
-    /// Adds a [`NoOp`] TRB to the control ring and then waits for a response
-    ///
-    /// [`NoOp`]: CommandTrb::NoOp
-    async fn test_command_ring(&mut self) {
-        for _ in 0..CommandTrbRing::TOTAL_LENGTH * 4 {
-            self.test_noop().await.unwrap();
-        }
-    }
-
-    /// Puts a single [`NoOp`] TRB on the command ring and waits for a [`CommandCompletion`] event TRB in response.
-    ///
-    /// [`NoOp`]: CommandTrb::NoOp
-    /// [`CommandCompletion`]: EventTrb::CommandCompletion
-    async fn test_noop(&mut self) -> Result<(), &'static str> {
-        assert!(
-            !self
-                .operational_registers
-                .read_usb_status()
-                .host_controller_halted(),
-            "XHCI controller is not running"
-        );
-        assert!(
-            self.operational_registers.read_usb_command().enabled(),
-            "XHCI controller is not running"
-        );
-
-        // debug!(
-        //     "{}",
-        //     self.operational_registers
-        //         .read_command_ring_control()
-        //         .command_ring_running()
-        // );
-
-        // SAFETY: TODO
-        let trb_addr = unsafe { self.write_command_trb(CommandTrb::NoOp).unwrap() };
-
-        // debug!("Waiting for response");
-
-        // Wait for controller to process TRB
-        for _ in 0..20 {
-            let read_event_trb = self.read_event_trb(0);
-
-            match read_event_trb {
-                None => (),
-                Some(trb) => match trb {
-                    EventTrb::CommandCompletion(trb) => {
-                        if trb.command_trb_pointer != trb_addr {
-                            return Err("CommandCompletion TRB points to wrong command TRB");
-                        }
-
-                        return Ok(());
+            if let Some(trb) = self.read_event_trb(0) {
+                match trb {
+                    EventTrb::MFINDEXWrap => (),
+                    EventTrb::PortStatusChange(trb) => {
+                        debug!("Port status change on port {:?}", trb.port_id);
                     }
-                    other => debug!("Found other TRB {other:?}"),
-                },
+                    _ => debug!("{trb:?}"),
+                }
             }
-
-            futures::pending!();
         }
-
-        Err("No CommandCompletion TRB found")
     }
 
     /// Writes a TRB to the command ring
@@ -455,8 +105,16 @@ impl XhciController {
         if let EventTrb::CommandCompletion(command_completion_trb) = trb {
             match command_completion_trb.completion_code {
                 CompletionCode::Success => (),
-                error => error!("Error occurred processing TRB: {error:?}"),
+                error => {
+                    error!("Error occurred processing TRB: {error:?}");
+                    return Some(trb);
+                }
             }
+
+            assert!(
+                !command_completion_trb.command_trb_pointer.is_null(),
+                "Command TRB pointer should not have been null"
+            );
 
             // SAFETY: The address was read from a command completion TRB
             unsafe {
@@ -467,82 +125,6 @@ impl XhciController {
 
         Some(trb)
     }
-}
-
-/// Maps the MMIO range in an XHCI controller's first BAR
-///
-/// # Safety
-/// * This function may only be called once per controller
-/// * No [`Bar`] struct may exist for the device's first BAR while this function is called
-unsafe fn map_mmio(
-    general_device_header: PciGeneralDeviceHeader,
-    function: &PciMappedFunction,
-) -> VirtAddr {
-    // SAFETY: XHCI controllers are guaranteed to have a BAR in BAR slot 0
-    // No other `Bar` exists.
-    let bar = unsafe { general_device_header.bar(function, 0) };
-
-    bar.debug();
-
-    let mmio = bar.get_frames();
-
-    // SAFETY: The physical address is not used by other code as this function is only called once per controller
-    let mapped_mmio = unsafe {
-        KERNEL_STATE
-            .physical_memory_accessor
-            .lock()
-            .map_frames(mmio)
-            .start
-            .start_address()
-    };
-
-    mapped_mmio
-}
-
-/// Initialises MSI or MSI-X for an XHCI controller
-///
-/// # Safety
-/// * This function must only be called once per controller
-/// * No [`Bar`] struct may exist for the device while this function is called
-unsafe fn init_msi(function: &mut PciMappedFunction) {
-    let registers = function.registers.clone();
-    let mut b = None;
-
-    // SAFETY: The passed closure returns the correct BAR.
-    unsafe {
-        function
-            .setup_msi(|i| {
-                b = Some(Bar::new_from_bar_number(&registers, i));
-                b.as_mut().unwrap()
-            })
-            .unwrap();
-    }
-}
-
-/// Reads the header of the controller.
-///
-/// This function also sanity checks that the device is actually an XHCI controller.
-fn parse_header(function: &PciMappedFunction) -> PciGeneralDeviceHeader {
-    debug!(
-        "PCIe registers are at physical address {:?}",
-        function.registers.phys_frame
-    );
-    debug!("{}: Reading header", function.function);
-
-    let header = function.read_header().unwrap().unwrap();
-    let HeaderType::GeneralDevice(general_device_header) = header.header_type else {
-        panic!("Device is not an XHCI controller")
-    };
-
-    assert_eq!(
-        header.class_code,
-        ClassCode::SerialBusController(SerialBusControllerType::UsbController(
-            USBControllerType::Xhci
-        )),
-        "Device is not an XHCI controller"
-    );
-
-    general_device_header
 }
 
 /// Defines a getter method for a type which contains a pointer to another type,

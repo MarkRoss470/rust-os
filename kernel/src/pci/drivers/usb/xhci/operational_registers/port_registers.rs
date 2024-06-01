@@ -299,6 +299,22 @@ pub struct StatusAndControl {
     pub warm_reset: bool,
 }
 
+impl StatusAndControl {
+    /// Sets all `RW1C` and `RW1S` bits to 0. This means that writing this value back to the controller won't have any unintended side-effects.
+    pub fn normalised(self) -> Self {
+        self.with_port_enabled(false)
+            .with_reset(false)
+            .with_connect_status_change(false)
+            .with_port_enabled_change(false)
+            .with_warm_port_reset_change(false)
+            .with_over_current_change(false)
+            .with_port_reset_change(false)
+            .with_port_link_state_change(false)
+            .with_port_config_error_change(false)
+            .with_warm_reset(false)
+    }
+}
+
 /// The behaviour of a connection in the U0 state transitioning to the U1 state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum U1Timeout {
