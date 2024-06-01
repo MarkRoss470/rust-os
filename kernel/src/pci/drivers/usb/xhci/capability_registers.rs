@@ -5,7 +5,7 @@ use core::{fmt::Debug, ptr::addr_of};
 use alloc::string::String;
 use x86_64::VirtAddr;
 
-use super::volatile_getter;
+use super::{contexts::ContextSize, volatile_getter};
 
 /// The `HCSPARAMS1` field of an [`CapabilityRegisters`] structure.
 ///
@@ -128,6 +128,25 @@ pub struct StructuralParameters3 {
     __: (),
 }
 
+impl ContextSize {
+    /// Constructs a [`ContextSize`] from its bit representation in [`CapabilityParameters1`]
+    const fn from_bits(bits: u32) -> Self {
+        match bits {
+            0 => Self::Small,
+            1 => Self::Large,
+            _ => unreachable!()
+        }
+    }
+
+    /// Converts a [`ContextSize`] into its bit representation in [`CapabilityParameters1`]
+    const fn into_bits(self) -> u32 {
+        match self {
+            Self::Small => 0,
+            Self::Large => 1,
+        }
+    }
+}
+
 /// The `HCCPARAMS1` field of an [`CapabilityRegisters`] structure.
 ///
 /// See the spec section [5.3.6] for more info
@@ -147,8 +166,9 @@ pub struct CapabilityParameters1 {
     /// [4.16]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A290%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C555%2C0%5D
     pub supports_bandwidth_negotiation: bool,
 
-    /// Whether the controller uses 64-byte context data structures. If `false`, 32-byte structures are used instead.
-    pub uses_64_byte_context_structs: bool,
+    /// Whether the controller uses 32 or 64 byte context data structures
+    #[bits(1)]
+    pub context_size: ContextSize,
 
     /// Whether the controller supports port power control.
     ///
@@ -253,7 +273,7 @@ impl CapabilityParameters1 {
         if self.supports_bandwidth_negotiation() {
             capabilities += "bandwidth_negotiation ";
         }
-        if self.uses_64_byte_context_structs() {
+        if self.context_size() == ContextSize::Large {
             capabilities += "64_byte_context ";
         }
         if self.supports_port_power_control() {

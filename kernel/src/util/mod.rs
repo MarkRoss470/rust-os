@@ -4,3 +4,4 @@
 pub mod byte_align_ints;
 pub mod iter_switch;
 pub mod iterator_list_debug;
+pub mod generic_mutability;

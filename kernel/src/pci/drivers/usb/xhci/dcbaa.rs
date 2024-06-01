@@ -9,7 +9,8 @@ use x86_64::PhysAddr;
 use crate::allocator::PageBox;
 
 use super::{
-    device_context::DeviceContext, operational_registers::SupportedPageSize,
+    contexts::{device_context::OwnedDeviceContext, ContextSize},
+    operational_registers::SupportedPageSize,
     scratchpad::ScratchpadBufferArray,
 };
 
@@ -33,7 +34,7 @@ pub struct DeviceContextBaseAddressArray {
     /// The scratchpad buffer array
     scratchpad_buffer_array: ScratchpadBufferArray,
     /// The device contexts pointed to by the DCBAA
-    contexts: Box<[DeviceContext]>,
+    contexts: Box<[OwnedDeviceContext]>,
 }
 
 impl DeviceContextBaseAddressArray {
@@ -41,16 +42,16 @@ impl DeviceContextBaseAddressArray {
     ///
     /// # Safety
     /// * `page_size` must be the value of [the controller's `page_size` register]
-    /// * `uses_64_byte_context_structs` must be the value of the controller's [`uses_64_byte_context_structs`] register
+    /// * `context_size` must be the value of the controller's [`context_size`] register
     /// * `max_scratchpad_buffers` must be the value of the controller's [`max_scratchpad_buffers`] register
     ///
     /// [the controller's `page_size` register]: super::operational_registers::OperationalRegisters::read_page_size
-    /// [`uses_64_byte_context_structs`]: super::capability_registers::CapabilityParameters1::uses_64_byte_context_structs
+    /// [`context_size`]: super::capability_registers::CapabilityParameters1::context_size
     /// [`max_scratchpad_buffers`]: super::capability_registers::StructuralParameters2::max_scratchpad_buffers
     pub unsafe fn new(
         len: usize,
         page_size: SupportedPageSize,
-        uses_64_byte_context_structs: bool,
+        context_size: ContextSize,
         max_scratchpad_buffers: usize,
     ) -> Self {
         assert!(len <= 256);
@@ -65,7 +66,7 @@ impl DeviceContextBaseAddressArray {
             scratchpad_buffer_array: scratchpad_buffer,
             contexts: core::iter::repeat(())
                 .take(len)
-                .map(|_| DeviceContext::new(page_size, uses_64_byte_context_structs))
+                .map(|_| OwnedDeviceContext::new(page_size, context_size))
                 .collect(),
         };
 
@@ -170,12 +171,12 @@ impl DeviceContextBaseAddressArray {
     }
 
     /// Gets the contained [`DeviceContext`]s as a slice
-    pub fn contexts(&self) -> &[DeviceContext] {
+    pub fn contexts(&self) -> &[OwnedDeviceContext] {
         &self.contexts
     }
 
     /// Gets the contained [`DeviceContext`]s as a mutable slice
-    pub fn contexts_mut(&mut self) -> &mut [DeviceContext] {
+    pub fn contexts_mut(&mut self) -> &mut [OwnedDeviceContext] {
         &mut self.contexts
     }
 }

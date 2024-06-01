@@ -65,8 +65,8 @@ impl EnableSlotTrb {
 /// and sets the [`slot_state`] field of the associated [`SlotContext`] to `Disabled`.
 ///
 /// [`slot_id`]: DisableSlotTrb::slot_id
-/// [`SlotContext`]: super::super::super::device_context::slot_context::SlotContext
-/// [`slot_state`]: super::super::super::device_context::slot_context::SlotContext::slot_state
+/// [`SlotContext`]: super::super::super::contexts::slot_context::SlotContext
+/// [`slot_state`]: super::super::super::contexts::slot_context::SlotContext::slot_state
 #[bitfield(u32)]
 pub struct DisableSlotTrb {
     pub cycle: bool,

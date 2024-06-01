@@ -1,58 +1,60 @@
-//! The [`DeviceContext`] type
+//! The [`DeviceContextRef`] type and its owned version [`OwnedDeviceContext`]
 
-pub mod endpoint_context;
-pub mod slot_context;
-
-use core::fmt::Debug;
+use core::{fmt::Debug, marker::PhantomData};
 
 use x86_64::PhysAddr;
 
-use self::{endpoint_context::EndpointContext, slot_context::SlotContext};
-use super::operational_registers::SupportedPageSize;
-use crate::{allocator::PageBox, util::iterator_list_debug::IteratorListDebug};
+use super::{
+    super::operational_registers::SupportedPageSize, endpoint_context::EndpointContext,
+    slot_context::SlotContext, ContextSize,
+};
+use crate::{
+    allocator::PageBox,
+    util::{
+        generic_mutability::{Immutable, Mutability, Mutable, Pointer},
+        iterator_list_debug::IteratorListDebug,
+    },
+};
 
 /// The XHCI _Device Context_ data structure.
 ///
 /// This data structure is defined in the spec section [6.2.1].
 ///
 /// [6.2.1]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A449%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C361%2C0%5D
-pub struct DeviceContext {
+pub struct OwnedDeviceContext {
     /// The page where the data structure is in memory
     page: PageBox,
-
-    /// The byte offset of each item in the array from the last.
-    ///
-    /// This is dependant on the [`uses_64_byte_context_structs`] field of the controller's capability registers.
-    ///
-    /// [`uses_64_byte_context_structs`]: super::capability_registers::CapabilityParameters1::uses_64_byte_context_structs
-    stride: usize,
+    /// The size of a context structure
+    context_size: ContextSize,
 }
 
-impl DeviceContext {
-    /// Constructs a new [`DeviceContext`] data structure.
+impl Debug for OwnedDeviceContext {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.get().fmt(f)
+    }
+}
+
+impl OwnedDeviceContext {
+    /// Allocates a new device context data structure.
     ///
     /// # Parameters
     /// * `page_size` is the page size supported by the controller, from the controller's operational registers.
     ///    This value can be obtained using the [`read_page_size`] method on the controller's [`OperationalRegisters`].
-    /// * `uses_64_byte_context_structures` is whether the controller uses 64 byte context structures as opposed to 32 byte ones.
-    ///    This valid can be obtained using the [`uses_64_byte_context_structs`] method on the controller's [`CapabilityParameters1`]
+    /// * `context_size` is the size of context structures.
+    ///    This can be obtained using the [`context_size`] method on the controller's [`CapabilityParameters1`]
     ///
-    /// [`read_page_size`]: super::operational_registers::OperationalRegisters::read_page_size
-    /// [`OperationalRegisters`]: super::operational_registers::OperationalRegisters
-    /// [`uses_64_byte_context_structs`]: super::capability_registers::CapabilityParameters1::uses_64_byte_context_structs
-    /// [`CapabilityParameters1`]: super::capability_registers::CapabilityParameters1
-    pub fn new(page_size: SupportedPageSize, uses_64_byte_context_structs: bool) -> Self {
+    /// [`read_page_size`]: super::super::operational_registers::OperationalRegisters::read_page_size
+    /// [`OperationalRegisters`]: super::super::operational_registers::OperationalRegisters
+    /// [`context_size`]: super::super::capability_registers::CapabilityParameters1::context_size
+    /// [`CapabilityParameters1`]: super::super::capability_registers::CapabilityParameters1
+    pub fn new(page_size: SupportedPageSize, context_size: ContextSize) -> Self {
         if page_size.page_size() != 0x1000 {
             todo!("Non-4k pages");
         }
 
         Self {
             page: PageBox::new(),
-            stride: if uses_64_byte_context_structs {
-                0x40
-            } else {
-                0x20
-            },
+            context_size,
         }
     }
 
@@ -61,10 +63,50 @@ impl DeviceContext {
         self.page.phys_frame().start_address()
     }
 
+    /// Gets a read-only reference to the device context
+    pub fn get(&self) -> DeviceContextRef<Immutable> {
+        // SAFETY: The pointer is valid for this borrow. `stride` is accurate.
+        unsafe { DeviceContextRef::new(self.page.as_ptr(), self.context_size) }
+    }
+
+    /// Gets a mutable reference to the device context
+    pub fn get_mut(&mut self) -> DeviceContextRef<Mutable> {
+        // SAFETY: The pointer is valid for this borrow. `stride` is accurate.
+        unsafe { DeviceContextRef::new(self.page.as_mut_ptr(), self.context_size) }
+    }
+}
+
+/// A reference to a _Device Context_ data structure.
+pub struct DeviceContextRef<'a, M: Mutability> {
+    /// The pointer where the device context is
+    ptr: M::Ptr<()>,
+
+    /// See [`OwnedDeviceContext::context_size`]
+    context_size: ContextSize,
+
+    /// The lifetime that this reference is valid for
+    p: PhantomData<&'a mut EndpointContext>,
+}
+
+impl<'a, M: Mutability> DeviceContextRef<'a, M> {
     /// Gets the [`DeviceContext`]'s [`SlotContext`]
     pub fn get_slot_context(&self) -> SlotContext {
         // SAFETY: The first item in the array is the slot context
-        unsafe { self.page.as_ptr::<SlotContext>().read() }
+        unsafe { self.ptr.as_const_ptr().cast::<SlotContext>().read() }
+    }
+
+    /// # Safety:
+    /// * `ptr` must be valid for reads for the size of a device context data structure
+    ///     for the whole lifetime `'a` (if `M` is `Mutable`, it must also be valid for writes).
+    /// * `context_size` must be accurate to the controller's [`context_size`] value.
+    ///
+    /// [`context_size`]: super::super::capability_registers::CapabilityParameters1::context_size
+    pub unsafe fn new(ptr: M::Ptr<()>, context_size: ContextSize) -> Self {
+        Self {
+            ptr,
+            context_size,
+            p: PhantomData,
+        }
     }
 
     /// The number of OUT [`EndpointContext`]s in the [`DeviceContext`]
@@ -86,28 +128,11 @@ impl DeviceContext {
         // SAFETY: The first two items in the table are the slot context and the bidirectional endpoint context 0,
         // so this endpoint context is at offset `stride`
         unsafe {
-            self.page
-                .as_ptr::<EndpointContext>()
-                .byte_add(self.stride)
+            self.ptr
+                .as_const_ptr()
+                .cast::<EndpointContext>()
+                .byte_add(self.context_size.bytes())
                 .read_volatile()
-        }
-    }
-
-    /// Sets the bidirectional first [`EndpointContext`]
-    ///
-    /// # Safety
-    /// * The OS must be allowed to write to the endpoint context (TODO: when is this true?)
-    /// * The new value must be valid. The caller is responsible for the behaviour of the controller in response to this [`EndpointContext`].
-    pub unsafe fn set_ep_context_0(&mut self, context: EndpointContext) {
-        // SAFETY: The first two items in the table are the slot context and the bidirectional endpoint context 0,
-        // so this endpoint context is at offset `stride`.
-
-        // The caller guarantees that the write is allowed and is responsible for the controller's response.
-        unsafe {
-            self.page
-                .as_mut_ptr::<EndpointContext>()
-                .byte_add(self.stride)
-                .write_volatile(context);
         }
     }
 
@@ -122,9 +147,10 @@ impl DeviceContext {
         // SAFETY: The array is laid out alternating OUT and IN contexts
         // so the offset from the beginning is `stride * 2 * i`
         let ec = unsafe {
-            self.page
-                .as_ptr::<EndpointContext>()
-                .byte_add(self.stride * 2 * i)
+            self.ptr
+                .as_const_ptr()
+                .cast::<EndpointContext>()
+                .byte_add(self.context_size.bytes() * 2 * i)
                 .read_volatile()
         };
 
@@ -142,13 +168,34 @@ impl DeviceContext {
         // SAFETY: The array is laid out alternating OUT and IN contexts
         // so the offset from the beginning is `stride * (2 * i + 1)`
         let ec = unsafe {
-            self.page
-                .as_ptr::<EndpointContext>()
-                .byte_add(self.stride * (2 * i + 1))
+            self.ptr
+                .as_const_ptr()
+                .cast::<EndpointContext>()
+                .byte_add(self.context_size.bytes() * (2 * i + 1))
                 .read_volatile()
         };
 
         Some(ec)
+    }
+}
+
+impl<'a> DeviceContextRef<'a, Mutable> {
+    /// Sets the bidirectional first [`EndpointContext`]
+    ///
+    /// # Safety
+    /// * The OS must be allowed to write to the endpoint context (TODO: when is this true?)
+    /// * The new value must be valid. The caller is responsible for the behaviour of the controller in response to this [`EndpointContext`].
+    pub unsafe fn set_ep_context_0(&mut self, context: EndpointContext) {
+        // SAFETY: The first two items in the table are the slot context and the bidirectional endpoint context 0,
+        // so this endpoint context is at offset `stride`.
+
+        // The caller guarantees that the write is allowed and is responsible for the controller's response.
+        unsafe {
+            self.ptr
+                .cast::<EndpointContext>()
+                .byte_add(self.context_size.bytes())
+                .write_volatile(context);
+        }
     }
 
     /// Sets the `i`th IN [`EndpointContext`].
@@ -165,15 +212,15 @@ impl DeviceContext {
 
         // The caller guarantees that the write is allowed and is responsible for the controller's response.
         unsafe {
-            self.page
-                .as_mut_ptr::<EndpointContext>()
-                .byte_add(self.stride * (2 * i + 1))
+            self.ptr
+                .cast::<EndpointContext>()
+                .byte_add(self.context_size.bytes() * (2 * i + 1))
                 .write_volatile(context);
         }
     }
 }
 
-impl Debug for DeviceContext {
+impl<'a, M: Mutability> Debug for DeviceContextRef<'a, M> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("DeviceContext")
             .field("slot_context", &self.get_slot_context())

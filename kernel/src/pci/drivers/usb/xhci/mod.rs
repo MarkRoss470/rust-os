@@ -35,9 +35,9 @@ use self::{
     trb::{CommandTrb, EventTrb},
 };
 
-pub mod capability_registers;
+mod capability_registers;
+mod contexts;
 mod dcbaa;
-mod device_context;
 mod doorbell;
 mod interrupter;
 pub mod operational_registers;
@@ -57,9 +57,9 @@ pub struct XhciController {
     /// The controller's runtime registers
     runtime_registers: RuntimeRegisters,
 
-    /// The _Device Context Base Address Array_, which contains [`DeviceContext`]s for the controller's slots.
+    /// The _Device Context Base Address Array_, which contains [`OwnedDeviceContext`]s for the controller's slots.
     ///
-    /// [`DeviceContext`]: device_context::DeviceContext
+    /// [`OwnedDeviceContext`]: contexts::device_context::OwnedDeviceContext
     dcbaa: DeviceContextBaseAddressArray,
     /// The command TRB ring, which software uses to give instructions to the controller
     command_ring: CommandTrbRing,
