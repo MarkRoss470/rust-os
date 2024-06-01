@@ -364,6 +364,11 @@ impl CompletionCode {
             224..=255 => Self::VendorDefined(bits),
         }
     }
+    
+    /// Constructs a [`CompletionCode`] from its bit representation
+    pub const fn new(bits: u8) -> Self {
+        Self::from_bits(bits)
+    }
 }
 
 /// A _Command Completion Event_ TRB. This is sent by the controller when it executes a [`CommandTrb`].

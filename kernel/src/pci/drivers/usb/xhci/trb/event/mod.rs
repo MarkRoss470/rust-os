@@ -1,10 +1,11 @@
 //! The [`EventTrb`] type
 
-use self::command_completion::CommandCompletionTrb;
+use self::{command_completion::CommandCompletionTrb, port_status_change::PortStatusChangeTrb};
 
 use super::{GenericTrbFlags, TrbType};
 
 pub mod command_completion;
+mod port_status_change;
 
 /// An event sent from the controller to the OS on an [`EventTrbRing`]
 ///
@@ -17,7 +18,7 @@ pub enum EventTrb {
     ///
     /// [`CommandTrb`]: super::CommandTrb
     CommandCompletion(CommandCompletionTrb),
-    PortStatusChange,
+    PortStatusChange(PortStatusChangeTrb),
     BandwidthRequest,
     Doorbell,
     HostController,
@@ -35,7 +36,9 @@ impl EventTrb {
             TrbType::CommandCompletionEvent => {
                 Self::CommandCompletion(CommandCompletionTrb::new(data))
             }
-            TrbType::PortStatusChangeEvent => Self::PortStatusChange,
+            TrbType::PortStatusChangeEvent => {
+                Self::PortStatusChange(PortStatusChangeTrb::new(data))
+            }
             TrbType::BandwidthRequestEvent => Self::BandwidthRequest,
             TrbType::DoorbellEvent => Self::Doorbell,
             TrbType::HostControllerEvent => Self::HostController,

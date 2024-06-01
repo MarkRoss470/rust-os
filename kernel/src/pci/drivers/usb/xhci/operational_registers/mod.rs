@@ -1,6 +1,6 @@
 //! Contains the [`OperationalRegisters`] struct and the types it depends on
 
-mod port_registers;
+pub mod port_registers;
 
 use core::fmt::Debug;
 use x86_64::{PhysAddr, VirtAddr};
