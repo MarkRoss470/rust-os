@@ -2,10 +2,14 @@
 
 use crate::pci::drivers::usb::xhci::trb::GenericTrbFlags;
 
-use self::slot::{DisableSlotTrb, EnableSlotTrb};
+use self::{
+    configure_endpoint::ConfigureEndpointTrb,
+    slot::{DisableSlotTrb, EnableSlotTrb},
+};
 
 use super::{link::LinkTrb, TrbType};
 
+pub mod configure_endpoint;
 pub mod slot;
 
 /// A TRB on the [`CommandTrbRing`].
@@ -15,7 +19,7 @@ pub mod slot;
 /// See the spec section [6.4.3] for more info.
 ///
 /// [6.4.3]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A494%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C169%2C0%5D
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 #[allow(clippy::missing_docs_in_private_items)] // TODO: add docs with the corresponding structs
 pub enum CommandTrb {
     /// A [`LinkTrb`]
@@ -24,7 +28,7 @@ pub enum CommandTrb {
     EnableSlot(EnableSlotTrb),
     DisableSlot(DisableSlotTrb),
     AddressDevice,
-    ConfigureEndpoint,
+    ConfigureEndpoint(ConfigureEndpointTrb),
     EvaluateContext,
     ResetEndpoint,
     StopEndpoint,
@@ -53,7 +57,7 @@ impl CommandTrb {
             CommandTrb::EnableSlot(_) => TrbType::EnableSlotCommand,
             CommandTrb::DisableSlot(_) => TrbType::DisableSlotCommand,
             CommandTrb::AddressDevice => TrbType::AddressDeviceCommand,
-            CommandTrb::ConfigureEndpoint => TrbType::ConfigureEndpointCommand,
+            CommandTrb::ConfigureEndpoint(_) => TrbType::ConfigureEndpointCommand,
             CommandTrb::EvaluateContext => TrbType::EvaluateContextCommand,
             CommandTrb::ResetEndpoint => TrbType::ResetEndpointCommand,
             CommandTrb::StopEndpoint => TrbType::StopEndpointCommand,
@@ -77,7 +81,7 @@ impl CommandTrb {
             CommandTrb::EnableSlot(enable_slot) => enable_slot.to_parts(cycle),
             CommandTrb::DisableSlot(disable_slot) => disable_slot.to_parts(cycle),
             CommandTrb::AddressDevice => todo!(),
-            CommandTrb::ConfigureEndpoint => todo!(),
+            CommandTrb::ConfigureEndpoint(_) => todo!(),
             CommandTrb::EvaluateContext => todo!(),
             CommandTrb::ResetEndpoint => todo!(),
             CommandTrb::StopEndpoint => todo!(),
