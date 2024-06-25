@@ -5,6 +5,11 @@
             "label": "Build kernel and launch",
             "type": "shell",
             "command": "bash ./.vscode/launch.sh ${workspaceFolder}"
+        },
+        {
+            "label": "Test kernel",
+            "type": "shell",
+            "command": "bash ./.vscode/test.sh ${workspaceFolder}"
         }
     ]
 }

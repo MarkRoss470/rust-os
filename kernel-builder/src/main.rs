@@ -14,11 +14,13 @@ use rayon::prelude::*;
 #[command(author="Mark Ross", version="0.1", about="Compiles and optionally runs the kernel", long_about = None)]
 struct Args {
     /// Runs the kernel using qemu after compiling it.
-    #[arg(long, action, conflicts_with = "test")]
+    /// Requires `--bios-path` to be set.
+    #[arg(long, action, conflicts_with = "test", requires = "bios_path")]
     run: bool,
 
     /// Compiles the kernel in test mode and tests it. Pass a space-separated list of numbers to only run those tests.
-    #[arg(long, action, num_args = 0..)]
+    /// Requires `--bios-path` to be set.
+    #[arg(long, action, num_args = 0.., requires = "bios_path")]
     test: Option<Vec<usize>>,
 
     /// Runs the kernel ready for a debugger to attach, with serial output written to the given file.
@@ -33,6 +35,10 @@ struct Args {
     /// Compiles the kernel in release mode.
     #[arg(long, action)]
     release: bool,
+
+    /// The path to the BIOS file to run
+    #[arg(long)]
+    bios_path: Option<String>,
 
     /// Adds a device when running qemu using the -device flag.
     /// Has no effect if not combined with --run or --test.  
@@ -83,8 +89,9 @@ fn prepare_cargo_command(args: &Args, dir: &str, subcommand: &str) -> Command {
 /// If `true`, a device will be added to allow the kernel to exit without usual power management, and no window will be shown.
 fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
     let mut c = std::process::Command::new("qemu-system-x86_64");
+    let bios_path = args.bios_path.as_ref().expect("bios_path should have been set");
 
-    c.arg("-bios").arg("/usr/share/ovmf/x64/OVMF.fd");
+    c.arg("-bios").arg(bios_path);
 
     c.arg("-machine").arg("q35");
 
