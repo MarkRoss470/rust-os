@@ -112,7 +112,7 @@ fn always_passes() {
     println!("Always passing test");
 }
 
-#[test_case]
-fn failure() {
-    panic!("Test failure panic")
-}
+// #[test_case]
+// fn failure() {
+//     panic!("Test failure panic")
+// }
