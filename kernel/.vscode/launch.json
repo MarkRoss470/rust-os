@@ -8,7 +8,11 @@
             "type": "gdb",
             "request": "attach",
             "name": "Launch in QEMU",
-            "executable": "./target/x86_64-unknown-none/debug/os",
+            "debugger_args": [
+                // The kernel is loaded at address 0xFFFF800000000000 by the bootloader
+                // This command tells GDB to use this offset
+                "--eval-command=symbol-file ./target/x86_64-unknown-none/debug/os -o 0xFFFF800000000000"
+            ],
             "target": ":1234",
             "remote": true,
             "cwd": "${workspaceRoot}",

@@ -16,7 +16,7 @@ use gimli::{
 use object::{elf::FileHeader64, Object, ObjectSection};
 use x86_64::VirtAddr;
 
-use crate::{print, println, KERNEL_STATE};
+use crate::{print, println, KERNEL_STATE, KERNEL_VIRT_ADDR};
 
 /// An error occurring while trying to print a backtrace.
 ///
@@ -171,7 +171,7 @@ fn backtrace_impl() -> Result<(), BacktracePrintError> {
     }
 
     let mut frame_pointer = stack_pointer;
-    let mut address_to_look_up = instruction_pointer;
+    let mut virtual_address = instruction_pointer;
     let mut ctx = Box::new(UnwindContext::new());
 
     println!();
@@ -188,22 +188,32 @@ fn backtrace_impl() -> Result<(), BacktracePrintError> {
 
         // Print the info for the current call frame, and record the starting address of the function if possible
         let function_start = if frames_checked > FRAMES_TO_SKIP {
-            print_location(&dwarf, address_to_look_up, frames_checked - FRAMES_TO_SKIP)
-                .unwrap_or_else(|e| {
-                    println!("{address_to_look_up:#x} @ ?? - Error getting frame info: {e:?}");
-                    None
-                })
+            print_location(
+                &dwarf,
+                virtual_address,
+                frames_checked - FRAMES_TO_SKIP,
+            )
+            .unwrap_or_else(|e| {
+                println!("{virtual_address:#x} @ ?? - Error getting frame info: {e:?}");
+                None
+            })
         } else {
             None
         };
+
+        // The address to look up in debug symbols
+        // This is offset by the kernel's location in memory to make the address line up with the debug info
+        // Look up one before the current address to correctly find frames when at the very end of a function
+        let debug_address = virtual_address
+            .checked_sub(KERNEL_VIRT_ADDR + 1)
+            .ok_or(BacktracePrintError::MathsError)?;
 
         // Get the unwinding info for the current address to see how to find the next call frame
         let unwinding_info = table.unwind_info_for_address(
             &eh_frame,
             &base_addresses,
             &mut ctx,
-            // Look up one before the current address to correctly find frames when at the very end of a function
-            address_to_look_up - 1,
+            debug_address,
             gimli::UnwindSection::cie_from_offset,
         )?;
 
@@ -248,12 +258,12 @@ fn backtrace_impl() -> Result<(), BacktracePrintError> {
         }
 
         // Get the instruction pointer for the next call frame
-        address_to_look_up = match eval_register(unwinding_info, Register(16), frame_pointer, rbp)?
-        {
-            // A null pointer or undefined RIP means that this is the last call frame
-            Some(0) | None => return Ok(()),
-            Some(addr) => addr,
-        };
+        virtual_address =
+            match eval_register(unwinding_info, Register(16), frame_pointer, rbp)? {
+                // A null pointer or undefined RIP means that this is the last call frame
+                Some(0) | None => return Ok(()),
+                Some(addr) => addr,
+            };
     }
 }
 
@@ -303,7 +313,7 @@ fn eval_register(
 /// containing the given address, by looking the address up in the `.debug_aranges` section.
 fn get_cu_offset(
     dwarf: &Dwarf,
-    address: u64,
+    debug_address: u64,
 ) -> Result<Option<gimli::DebugInfoOffset>, BacktracePrintError> {
     let aranges = dwarf.debug_aranges;
     let mut headers = aranges.headers();
@@ -317,7 +327,7 @@ fn get_cu_offset(
             let range = entry.range();
 
             // If the range contains the address, return the offset of its compilation unit into `.debug_info`
-            if (range.begin..range.end).contains(&address) {
+            if (range.begin..range.end).contains(&debug_address) {
                 return Ok(Some(header.debug_info_offset()));
             }
         }
@@ -330,7 +340,7 @@ fn get_cu_offset(
 fn get_line_row<'a>(
     dwarf: &'a Dwarf<'a>,
     cu: &'a UnitHeader<'a>,
-    address_to_look_up: u64,
+    debug_address: u64,
 ) -> Result<Option<(LineRow, LineProgramHeader<'a>)>, BacktracePrintError> {
     // Get the debug entries for the CU
     let abbreviations = cu.abbreviations(&dwarf.debug_abbrev)?;
@@ -360,13 +370,13 @@ fn get_line_row<'a>(
 
     // Loop through rows until the address is found
     while let Some((_, row)) = rows.next_row()? {
-        if row.address() == address_to_look_up {
+        if row.address() == debug_address {
             found = Some(*row);
             break;
         }
 
         if let Some(previous) = previous {
-            if (previous.address()..row.address()).contains(&address_to_look_up) {
+            if (previous.address()..row.address()).contains(&debug_address) {
                 found = Some(previous);
                 break;
             }
@@ -382,21 +392,24 @@ fn get_line_row<'a>(
 /// Also computes and returns the starting address of the function the address is in.
 fn print_location(
     dwarf: &Dwarf,
-    address: u64,
+    virtual_address: u64,
     frame_number: usize,
 ) -> Result<Option<u64>, BacktracePrintError> {
-    print!("#{frame_number:03} 0x{address:016x} ");
+    print!("#{frame_number:03} 0x{virtual_address:016x} ");
 
+    // Subtract the starting address of the kernel in memory to get the address which will be in the debug info
     // Look up one before the current address to correctly find frames when at the very end of a function
-    let address_to_look_up = address - 1;
+    let debug_address = virtual_address
+        .checked_sub(KERNEL_VIRT_ADDR + 1)
+        .ok_or(BacktracePrintError::MathsError)?;
 
     // Get the offset into `.debug_info` of the compilation unit for this address
-    let cu_offset = get_cu_offset(dwarf, address_to_look_up)?
+    let cu_offset = get_cu_offset(dwarf, debug_address)?
         .ok_or(BacktracePrintError::AddressNotFoundInARanges)?;
     // Get the compilation unit for this address
     let cu = dwarf.debug_info.header_from_offset(cu_offset)?;
 
-    let Some((row, header)) = get_line_row(dwarf, &cu, address_to_look_up)? else {
+    let Some((row, header)) = get_line_row(dwarf, &cu, debug_address)? else {
         return Ok(None);
     };
 
@@ -422,7 +435,7 @@ fn print_location(
         };
 
         // If the current address is inside the function
-        if (start..start + len).contains(&address_to_look_up) {
+        if (start..start + len).contains(&debug_address) {
             // Get the function name
             let name = entry
                 .attr(DW_AT_name)?

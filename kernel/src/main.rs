@@ -71,10 +71,14 @@ use pci::lspci;
 
 use crate::{acpi::power_off, graphics::clear, scheduler::num_tasks};
 
+/// The starting virtual address where the kernel will be mapped by the bootloader
+const KERNEL_VIRT_ADDR: u64 = 0xFFFF800000000000;
+
 /// The config struct to instruct the bootloader how to load the kernel
 const BOOT_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
     config.mappings.physical_memory = Some(bootloader_api::config::Mapping::Dynamic);
+    config.mappings.dynamic_range_start = Some(KERNEL_VIRT_ADDR);
     config
 };
 
