@@ -1,7 +1,7 @@
 //! Types for managing the kernel's global state
 
 use core::cell::RefCell;
-use core::sync::atomic::{AtomicBool, AtomicUsize};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use acpica_bindings::AcpicaOperationFullyInitialized;
 use bootloader_api::BootInfo;
@@ -126,15 +126,17 @@ pub struct KernelState {
 }
 
 impl KernelState {
-    /// Gets the number of [`ticks`][KernelState::ticks] since the kernel was initialised
+    /// Gets the number of ticks since the kernel was initialised.
+    /// This should increase by about 100 each second (TODO: be more precise / configurable)
     pub fn ticks(&self) -> usize {
-        self.ticks.load(core::sync::atomic::Ordering::Relaxed)
+        self.ticks.load(Ordering::Relaxed)
     }
 
     /// Adds one to [`ticks`][KernelState::ticks]
     pub fn increment_ticks(&self) {
         self.ticks
-            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |i| i.checked_add(1))
+            .unwrap();
     }
 }
 

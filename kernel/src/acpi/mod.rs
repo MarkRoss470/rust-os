@@ -17,7 +17,7 @@ use x86_64::{
 
 use crate::{
     cpu::{register_interrupt_callback, remove_interrupt_callback, CallbackRemoveError},
-    global_state::{KernelState, KERNEL_STATE},
+    global_state::KERNEL_STATE,
     graphics::flush,
     pci, print, println,
 };
@@ -263,7 +263,7 @@ struct AcpiInterface {
     rsdp_addr: u64,
 }
 
-// SAFETY: TODO
+// SAFETY: Panic unwinding is disabled. Safety is annotated per method
 unsafe impl AcpiHandler for AcpiInterface {
     unsafe fn predefined_override(
         &mut self,
@@ -275,11 +275,13 @@ unsafe impl AcpiHandler for AcpiInterface {
         Ok(None)
     }
 
+    // SAFETY: The returned address points to the RSDP
     fn get_root_pointer(&mut self) -> acpica_bindings::types::AcpiPhysicalAddress {
         debug!("Root pointer is {:#x}", self.rsdp_addr);
-        AcpiPhysicalAddress(self.rsdp_addr as _)
+        AcpiPhysicalAddress(self.rsdp_addr.try_into().unwrap())
     }
 
+    // SAFETY: The memory is not unmapped except in `unmap_memory`
     unsafe fn map_memory(
         &mut self,
         physical_address: acpica_bindings::types::AcpiPhysicalAddress,
@@ -332,7 +334,7 @@ unsafe impl AcpiHandler for AcpiInterface {
 
     fn get_physical_address(
         &mut self,
-        logical_address: *mut u8,
+        _logical_address: *mut u8,
     ) -> Result<
         Option<acpica_bindings::types::AcpiPhysicalAddress>,
         acpica_bindings::status::AcpiError,
@@ -354,6 +356,8 @@ unsafe impl AcpiHandler for AcpiInterface {
         .map_err(|_| AcpiError::Error)
     }
 
+    // SAFETY: The interrupt handler is removed if present.
+    // NotExist is returned if not present.
     unsafe fn remove_interrupt_handler(
         &mut self,
         interrupt_number: u32,
@@ -366,6 +370,8 @@ unsafe impl AcpiHandler for AcpiInterface {
         }
     }
 
+    // SAFETY: The value limits are upheld. This is the only thread, so uniqueness is not a problem
+    // TODO: multithreading
     fn get_thread_id(&mut self) -> u64 {
         1
     }
@@ -378,8 +384,7 @@ unsafe impl AcpiHandler for AcpiInterface {
 
     unsafe fn execute(
         &mut self,
-        // callback_type: AcpiExecuteType,
-        callback: acpica_bindings::types::AcpiThreadCallback,
+        _callback: acpica_bindings::types::AcpiThreadCallback,
     ) -> Result<(), acpica_bindings::status::AcpiError> {
         todo!()
     }
@@ -388,6 +393,7 @@ unsafe impl AcpiHandler for AcpiInterface {
         todo!()
     }
 
+    // SAFETY: This won't return until the given time elapses (assuming 100 ticks per second)
     unsafe fn sleep(&mut self, millis: usize) {
         let target_kernel_ticks = KERNEL_STATE.ticks() + millis / 10;
         while KERNEL_STATE.ticks() < target_kernel_ticks {
@@ -395,7 +401,7 @@ unsafe impl AcpiHandler for AcpiInterface {
         }
     }
 
-    unsafe fn stall(&mut self, micros: usize) {
+    unsafe fn stall(&mut self, _micros: usize) {
         todo!()
     }
 
@@ -459,29 +465,33 @@ unsafe impl AcpiHandler for AcpiInterface {
         Ok(())
     }
 
+    /// SAFETY: Ticks will not overflow, so this timer won't decrease.
     unsafe fn get_timer(&mut self) -> u64 {
-        // TODO: actually implement a timer
-        let timer = KERNEL_STATE.ticks() as u64 * 100_000;
-        // trace!("Getting timer: {timer}");
-        timer
+        // TODO: actually implement a timer        
+        KERNEL_STATE.ticks() as u64 * 100_000
     }
 
+    // SAFETY: The read is volatile and unaligned
     unsafe fn read_physical_u8(&mut self, address: AcpiPhysicalAddress) -> Result<u8, AcpiError> {
         Ok(read_physical!(1, address))
     }
 
+    // SAFETY: The read is volatile and unaligned
     unsafe fn read_physical_u16(&mut self, address: AcpiPhysicalAddress) -> Result<u16, AcpiError> {
         Ok(read_physical!(2, address))
     }
 
+    // SAFETY: The read is volatile and unaligned
     unsafe fn read_physical_u32(&mut self, address: AcpiPhysicalAddress) -> Result<u32, AcpiError> {
         Ok(read_physical!(4, address))
     }
 
+    // SAFETY: The read is volatile and unaligned
     unsafe fn read_physical_u64(&mut self, address: AcpiPhysicalAddress) -> Result<u64, AcpiError> {
         Ok(read_physical!(8, address))
     }
 
+    // SAFETY: The write is volatile and unaligned
     unsafe fn write_physical_u8(
         &mut self,
         address: AcpiPhysicalAddress,
@@ -490,6 +500,7 @@ unsafe impl AcpiHandler for AcpiInterface {
         Ok(write_physical!(1, address, value))
     }
 
+    // SAFETY: The write is volatile and unaligned
     unsafe fn write_physical_u16(
         &mut self,
         address: AcpiPhysicalAddress,
@@ -498,6 +509,7 @@ unsafe impl AcpiHandler for AcpiInterface {
         Ok(write_physical!(2, address, value))
     }
 
+    // SAFETY: The write is volatile and unaligned
     unsafe fn write_physical_u32(
         &mut self,
         address: AcpiPhysicalAddress,
@@ -506,6 +518,7 @@ unsafe impl AcpiHandler for AcpiInterface {
         Ok(write_physical!(4, address, value))
     }
 
+    // SAFETY: The write is volatile and unaligned
     unsafe fn write_physical_u64(
         &mut self,
         address: AcpiPhysicalAddress,
@@ -514,11 +527,11 @@ unsafe impl AcpiHandler for AcpiInterface {
         Ok(write_physical!(8, address, value))
     }
 
-    unsafe fn readable(&mut self, pointer: *mut core::ffi::c_void, length: usize) -> bool {
+    unsafe fn readable(&mut self, _pointer: *mut core::ffi::c_void, _length: usize) -> bool {
         todo!()
     }
 
-    unsafe fn writable(&mut self, pointer: *mut core::ffi::c_void, length: usize) -> bool {
+    unsafe fn writable(&mut self, _pointer: *mut core::ffi::c_void, _length: usize) -> bool {
         todo!()
     }
 
@@ -618,7 +631,7 @@ unsafe impl AcpiHandler for AcpiInterface {
                 id.function.try_into().unwrap(),
                 register.try_into().unwrap(),
             )
-            .write_volatile(value)
+            .write_volatile(value);
         };
 
         Ok(())
@@ -640,7 +653,7 @@ unsafe impl AcpiHandler for AcpiInterface {
                 id.function.try_into().unwrap(),
                 register.try_into().unwrap(),
             )
-            .write_volatile(value)
+            .write_volatile(value);
         };
 
         Ok(())
@@ -662,7 +675,7 @@ unsafe impl AcpiHandler for AcpiInterface {
                 id.function.try_into().unwrap(),
                 register.try_into().unwrap(),
             )
-            .write_volatile(value)
+            .write_volatile(value);
         };
 
         Ok(())
@@ -684,7 +697,7 @@ unsafe impl AcpiHandler for AcpiInterface {
                 id.function.try_into().unwrap(),
                 register.try_into().unwrap(),
             )
-            .write_volatile(value)
+            .write_volatile(value);
         };
 
         Ok(())
