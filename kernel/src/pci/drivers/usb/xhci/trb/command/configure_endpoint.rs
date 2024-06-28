@@ -12,6 +12,8 @@ pub enum InputContextPointer {
     Deconfigure,
     /// The controller should configure the device slot using the physical address of the
     /// [`InputContext`] which should be associated with it.
+    /// 
+    /// [`InputContext`]: super::super::super::contexts::input_context::InputContext
     Configure(PhysAddr),
 }
 
@@ -43,6 +45,8 @@ struct ConfigureEndpointTrbFlags {
 #[derive(Debug)]
 pub struct ConfigureEndpointTrb {
     /// The physical address of the [`InputContext`] to use, or an instruction to deconfigure the endpoint
+    /// 
+    /// [`InputContext`]: super::super::super::contexts::input_context::InputContext
     input_context_pointer: InputContextPointer,
     /// The slot id to configure
     slot_id: u8,

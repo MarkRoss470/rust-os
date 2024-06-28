@@ -18,6 +18,7 @@ pub mod slot;
 ///
 /// See the spec section [6.4.3] for more info.
 ///
+/// [`CommandTrbRing`]: super::CommandTrbRing
 /// [6.4.3]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A494%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C169%2C0%5D
 #[derive(Debug)]
 #[allow(clippy::missing_docs_in_private_items)] // TODO: add docs with the corresponding structs
@@ -43,7 +44,7 @@ pub enum CommandTrb {
     ///
     /// This is used to test that the command and event rings are set up properly
     ///
-    /// [`CommandCompletion`]: event::EventTrb::CommandCompletion
+    /// [`CommandCompletion`]: super::event::EventTrb::CommandCompletion
     NoOp,
     GetExtendedProperty,
     SetExtendedProperty,

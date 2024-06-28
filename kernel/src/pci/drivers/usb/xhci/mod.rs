@@ -19,7 +19,7 @@ use self::{
     operational_registers::OperationalRegisters,
     runtime_registers::RuntimeRegisters,
     trb::{
-        command::CommandTrb, event::command_completion::CompletionCode, CommandTrbRing, EventTrb,
+        CommandTrb, event::command_completion::CompletionCode, CommandTrbRing, EventTrb,
         RingFullError,
     },
 };

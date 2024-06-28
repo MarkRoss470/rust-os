@@ -45,13 +45,13 @@ pub struct LinkTrbFlags {
     _reserved: (),
 }
 
-/// A TRB on a [control] or transfer (TODO: link) TRB ring which indicates the end of a segment of the ring.
+/// A TRB on a [command] or transfer (TODO: link) TRB ring which indicates the end of a segment of the ring.
 /// The TRB also contains the [`toggle_cycle`] flag, which tells whether controller to switch its cycle state.
 /// This is so that the controller doesn't have to overwrite TRBs after it reads them - TRBs which were written
 /// on the first pass around the ring will not be read on the controller's next pass because the cycle bit will not match
 /// the controller's cycle state.
 ///
-/// [Control]: super::command_ring::CommandTrbRing
+/// [command]: super::CommandTrbRing
 /// [`toggle_cycle`]: LinkTrbFlags::cycle
 #[derive(Debug, Clone, Copy)]
 pub struct LinkTrb {

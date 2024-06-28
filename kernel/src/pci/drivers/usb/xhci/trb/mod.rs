@@ -8,15 +8,16 @@
 use self::{link::LinkTrb, normal::NormalTrb};
 
 pub mod command;
-mod software_driven_rings;
 pub mod event;
 mod event_ring;
 mod link;
 pub mod normal;
+mod software_driven_rings;
 
-pub use software_driven_rings::CommandTrbRing;
+pub use command::CommandTrb;
 pub use event::EventTrb;
 pub use event_ring::EventTrbRing;
+pub use software_driven_rings::CommandTrbRing;
 
 /// A type of TRB. Taken from [this table].
 ///

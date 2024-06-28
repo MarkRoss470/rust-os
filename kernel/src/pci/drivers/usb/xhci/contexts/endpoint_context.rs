@@ -13,7 +13,7 @@ pub enum EndpointState {
     /// a [Reset Endpoint Command] to recover from the Halt condition and transition to the Stopped
     /// state. SW may manipulate the Transfer Ring while in this state.
     ///
-    /// [Reset Endpoint Command]: super::super::trb::CommandTrb::ResetEndpoint
+    /// [Reset Endpoint Command]: super::super::trb::command::CommandTrb::ResetEndpoint
     Halted,
     /// The endpoint is not running due to a Stop Endpoint Command or recovering
     /// from a Halt condition. SW may manipulate the Transfer Ring while in this state.

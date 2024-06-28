@@ -89,7 +89,7 @@ pub struct DeviceContextRef<'a, M: Mutability> {
 }
 
 impl<'a, M: Mutability> DeviceContextRef<'a, M> {
-    /// Gets the [`DeviceContext`]'s [`SlotContext`]
+    /// Gets the DeviceContext's [`SlotContext`]
     pub fn get_slot_context(&self) -> SlotContext {
         // SAFETY: The first item in the array is the slot context
         unsafe { self.ptr.as_const_ptr().cast::<SlotContext>().read() }
@@ -109,14 +109,14 @@ impl<'a, M: Mutability> DeviceContextRef<'a, M> {
         }
     }
 
-    /// The number of OUT [`EndpointContext`]s in the [`DeviceContext`]
+    /// The number of OUT [`EndpointContext`]s in the Device Context
     fn out_len(&self) -> usize {
         let context_entries: usize = self.get_slot_context().context_entries().into();
 
         context_entries / 2
     }
 
-    /// The number of IN [`EndpointContext`]s in the [`DeviceContext`]
+    /// The number of IN [`EndpointContext`]s in the Device Context
     fn in_len(&self) -> usize {
         let context_entries: usize = self.get_slot_context().context_entries().into();
 

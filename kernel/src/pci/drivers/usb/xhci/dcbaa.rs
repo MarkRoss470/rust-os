@@ -1,5 +1,5 @@
 //! The [`DeviceContextBaseAddressArray`] struct for associating xHCI Device Slots
-//! with their respective [`DeviceContext`] data structures.
+//! with their respective [`OwnedDeviceContext`] data structures.
 
 use core::fmt::Debug;
 
@@ -16,9 +16,9 @@ use super::{
 };
 
 /// The _Device Context Base Address Array_ (DCBAA) data structure is used to
-/// associate an xHCI _Device Slot_ with its respective [`DeviceContext`] data structure.
+/// associate an xHCI _Device Slot_ with its respective [`OwnedDeviceContext`] data structure.
 /// The DCBAA entry associated with each allocated _Device Slot_
-/// contains a 64-bit pointer to the base of the associated [`DeviceContext`].
+/// contains a 64-bit pointer to the base of the associated DeviceContext.
 ///
 /// The DCBAA is 64-byte aligned and may not span page boundaries.
 ///
@@ -182,7 +182,7 @@ impl DeviceContextBaseAddressArray {
     /// Sets the address for the given slot
     ///
     /// # Safety
-    /// * `address` must be the address of a [`DeviceContext`] data structure
+    /// * `address` must be the address of a Device Context data structure
     ///
     /// # Panics
     /// * If the index is outside the range of the table, i.e. `i >= len`
@@ -201,12 +201,12 @@ impl DeviceContextBaseAddressArray {
         }
     }
 
-    /// Gets the contained [`DeviceContext`]s as a slice
+    /// Gets the contained Device Contexts as a slice
     pub fn contexts(&self) -> &[OwnedDeviceContext] {
         &self.contexts
     }
 
-    /// Gets the contained [`DeviceContext`]s as a mutable slice
+    /// Gets the contained Device Contexts as a mutable slice
     pub fn contexts_mut(&mut self) -> &mut [OwnedDeviceContext] {
         &mut self.contexts
     }

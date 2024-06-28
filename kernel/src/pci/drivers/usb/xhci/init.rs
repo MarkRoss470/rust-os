@@ -26,7 +26,7 @@ use super::{
     },
     runtime_registers::RuntimeRegisters,
     trb::{
-        command::CommandTrb, event::command_completion::CompletionCode, CommandTrbRing, EventTrb,
+        CommandTrb, event::command_completion::CompletionCode, CommandTrbRing, EventTrb,
     },
 };
 
@@ -386,7 +386,7 @@ unsafe fn find_registers(
 /// This function will completely reset the controller, so the caller needs to ensure no code
 /// is relying on the state of the controller being preserved.
 ///
-/// [`UsbCommand::reset`]: operational_registers::UsbCommand::reset
+/// [`UsbCommand::reset`]: super::operational_registers::UsbCommand::reset
 async unsafe fn reset_and_wait(operational_registers: &mut OperationalRegisters) {
     let mut usb_command = operational_registers.read_usb_command();
     usb_command.set_reset(true);
@@ -405,8 +405,8 @@ async unsafe fn reset_and_wait(operational_registers: &mut OperationalRegisters)
 
 /// Sets the value of [`max_device_slots_enabled`] to [`max_ports`].
 ///
-/// [`max_device_slots_enabled`]: operational_registers::ConfigureRegister::max_device_slots_enabled
-/// [`max_ports`]: capability_registers::StructuralParameters1::max_ports
+/// [`max_device_slots_enabled`]: super::operational_registers::ConfigureRegister::max_device_slots_enabled
+/// [`max_ports`]: super::capability_registers::StructuralParameters1::max_ports
 fn enable_all_ports(
     capability_registers: &CapabilityRegisters,
     operational_registers: &mut OperationalRegisters,
