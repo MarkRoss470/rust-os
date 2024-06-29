@@ -8,8 +8,9 @@ use core::fmt::Debug;
 use core::marker::PhantomData;
 
 use crate::println;
+use crate::util::generic_mutability::{Immutable, Mutability, Mutable, Pointer};
 
-use super::super::{volatile_accessors, volatile_getter};
+use super::super::{volatile_accessors, volatile_getter, volatile_setter};
 use super::OperationalRegisters;
 
 /// Power management and connection state of a USB port
@@ -482,27 +483,35 @@ pub struct PortRegisterFields {
     hardware_lpm_control: PortHardwareLpmControl,
 }
 
+/// Trait to store the data needed for a [`PortRegister`] of the given mutability.
+/// This is needed because a [`PortRegister`] with a mutable reference also needs a reference to the
+/// [`OperationalRegisters`] in order to check that the controller is halted before writing, while the
+/// immutable version only needs a [`PhantomData`] to track lifetimes.
+pub trait PortRegisterMutability: Mutability {
+    /// The data needed
+    type OperationalRegisters<'a>;
+}
+
+impl PortRegisterMutability for Immutable {
+    type OperationalRegisters<'a> = PhantomData<&'a OperationalRegisters>;
+}
+
+impl PortRegisterMutability for Mutable {
+    type OperationalRegisters<'a> = &'a OperationalRegisters;
+}
+
 /// A wrapper around the [`PortRegisterFields`] which ensures that all reads are volatile.
 /// Behaves like a shared reference.
 #[derive(Debug)]
-pub struct PortRegister<'a> {
+pub struct PortRegister<'a, M: PortRegisterMutability> {
     /// The pointer
-    ptr: *const PortRegisterFields,
+    ptr: M::Ptr<PortRegisterFields>,
     /// A phantom reference to the operational registers struct
     /// so that this struct can be properly borrow-checked
-    operational_registers: PhantomData<&'a OperationalRegisters>,
+    operational_registers: M::OperationalRegisters<'a>,
 }
 
-impl<'a> PortRegister<'a> {
-    /// # Safety
-    /// The pointer must be valid for reads for the duration of `'a`.
-    pub unsafe fn new(ptr: *const PortRegisterFields) -> Self {
-        Self {
-            ptr,
-            operational_registers: PhantomData,
-        }
-    }
-
+impl<'a, M: PortRegisterMutability> PortRegister<'a, M> {
     /// Reads the fields of the register and prints them in a debug format
     pub fn debug(&self) {
         let fields = PortRegisterFields {
@@ -516,8 +525,33 @@ impl<'a> PortRegister<'a> {
     }
 }
 
+impl<'a> PortRegister<'a, Immutable> {
+    /// # Safety
+    /// The pointer must be valid for reads for the duration of `'a`.
+    pub unsafe fn new(ptr: *const PortRegisterFields) -> Self {
+        Self {
+            ptr,
+            operational_registers: PhantomData,
+        }
+    }
+}
+
+impl<'a> PortRegister<'a, Mutable> {
+    /// # Safety
+    /// The pointer must be valid for reads for the duration of `'a`.
+    pub unsafe fn new_mut(
+        ptr: *mut PortRegisterFields,
+        operational_registers: &'a OperationalRegisters,
+    ) -> Self {
+        Self {
+            ptr,
+            operational_registers,
+        }
+    }
+}
+
 #[rustfmt::skip]
-impl<'a> PortRegister<'a> {
+impl<'a, M: PortRegisterMutability> PortRegister<'a, M> {
     volatile_getter!(
         PortRegister, PortRegisterFields,
         status_and_control, StatusAndControl,
@@ -540,70 +574,38 @@ impl<'a> PortRegister<'a> {
     );
 }
 
-/// A wrapper around the [`PortRegisterFields`] which ensures that all reads and writes are volatile.
-/// Behaves like a unique reference.
-#[derive(Debug)]
-pub struct PortRegisterMut<'a> {
-    /// The pointer
-    ptr: *mut PortRegisterFields,
-    /// A reference to the operational registers struct
-    /// so that this struct can be properly borrow-checked,
-    /// and to check that the controller is enabled before
-    operational_registers: &'a OperationalRegisters,
-}
-
-impl<'a> PortRegisterMut<'a> {
-    /// # Safety
-    /// The pointer must be valid for reads and writes for the duration of `'a`.
-    pub unsafe fn new(
-        ptr: *mut PortRegisterFields,
-        operational_registers: &'a OperationalRegisters,
-    ) -> Self {
-        Self {
-            ptr,
-            operational_registers,
-        }
-    }
-}
-
-#[rustfmt::skip]
-impl<'a> PortRegisterMut<'a> {
-    volatile_accessors!(
+impl<'a> PortRegister<'a, Mutable> {
+    volatile_setter!(
         PortRegister, PortRegisterFields,
         status_and_control, StatusAndControl,
-        (pub fn read_status_and_control), (pub fn write_status_and_control),
-        |_|true, |v: &PortRegisterMut|!v.operational_registers.read_usb_status().host_controller_halted()
+        (pub fn write_status_and_control),
+        |v: &PortRegister<'a, Mutable>|!v.operational_registers.read_usb_status().host_controller_halted()
     );
-    volatile_accessors!(
+    volatile_setter!(
         PortRegister, PortRegisterFields,
         power_management, PowerManagement,
-        (pub fn read_power_management), (pub fn write_power_management),
-        |_|true, |v: &PortRegisterMut|!v.operational_registers.read_usb_status().host_controller_halted()
+        (pub fn write_power_management),
+        |v: &PortRegister<'a, Mutable>|!v.operational_registers.read_usb_status().host_controller_halted()
     );
-    volatile_accessors!(
+    volatile_setter!(
         PortRegister, PortRegisterFields,
         link_info, PortLinkInfo,
-        (pub fn read_link_info), (pub fn write_link_info),
-        |_|true, |v: &PortRegisterMut|!v.operational_registers.read_usb_status().host_controller_halted()
+        (pub fn write_link_info),
+        |v: &PortRegister<'a, Mutable>|!v.operational_registers.read_usb_status().host_controller_halted()
     );
-    volatile_accessors!(
+    volatile_setter!(
         PortRegister, PortRegisterFields,
         hardware_lpm_control, PortHardwareLpmControl,
-        (pub fn read_hardware_lpm_control), (pub fn write_hardware_lpm_control),
-        |_|true, |v: &PortRegisterMut|!v.operational_registers.read_usb_status().host_controller_halted()
+        (pub fn write_hardware_lpm_control),
+        |v: &PortRegister<'a, Mutable>|!v.operational_registers.read_usb_status().host_controller_halted()
     );
 }
 
-impl<'a> PortRegisterMut<'a> {
+impl<'a, M: PortRegisterMutability> PortRegister<'a, M> {
     /// Borrows the [`PortRegisterMut`] as a [`PortRegister`], so that there can be multiple readers temporarily.
-    pub fn as_const(&self) -> PortRegister<'_> {
+    pub fn as_const(&self) -> PortRegister<'_, Immutable> {
         // SAFETY: The lifetime of the returned `PortRegister` is the same as the borrow of self,
         // so no mutable methods can be used while that struct exists.
-        unsafe { PortRegister::new(self.ptr) }
-    }
-
-    /// Reads the fields of the register and prints them in a debug format
-    pub fn debug(&self) {
-        self.as_const().debug();
+        unsafe { PortRegister::new(self.ptr.as_const_ptr()) }
     }
 }

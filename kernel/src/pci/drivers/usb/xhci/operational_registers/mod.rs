@@ -5,10 +5,10 @@ pub mod port_registers;
 use core::fmt::Debug;
 use x86_64::{PhysAddr, VirtAddr};
 
-use self::port_registers::{PortRegister, PortRegisterMut};
+use self::port_registers::PortRegister;
 
 use super::{capability_registers::CapabilityRegisters, volatile_accessors, volatile_getter};
-use crate::{print, println};
+use crate::{print, println, util::generic_mutability::{Immutable, Mutable}};
 
 /// The behaviour of when the controller is allowed to stop incrementing MFINDEX.
 /// Regardless of this setting, the controller may always stop incrementing if all root hub ports are in the
@@ -529,7 +529,7 @@ impl OperationalRegisters {
     }
 
     /// Gets the [`PortRegister`] at the _1 based_ port number given.
-    pub fn port(&self, port_number: usize) -> Option<PortRegister<'_>> {
+    pub fn port(&self, port_number: usize) -> Option<PortRegister<'_, Immutable>> {
         if port_number != 0 && port_number > self.max_ports as usize {
             None
         } else {
@@ -543,13 +543,13 @@ impl OperationalRegisters {
     }
 
     /// Gets the [`PortRegister`] at the _1 based_ port number given.
-    pub fn port_mut(&mut self, port_number: usize) -> Option<PortRegisterMut<'_>> {
+    pub fn port_mut(&mut self, port_number: usize) -> Option<PortRegister<'_, Mutable>> {
         if port_number != 0 && port_number > self.max_ports as usize {
             None
         } else {
             // SAFETY: `port_number` is not greater than `max_ports`, so this pointer is valid
             unsafe {
-                Some(PortRegisterMut::new(
+                Some(PortRegister::new_mut(
                     self.ptr.byte_add(0x400 + 0x10 * (port_number - 1)).cast(),
                     self,
                 ))
@@ -558,7 +558,7 @@ impl OperationalRegisters {
     }
 
     /// Get an iterator over the ports
-    pub fn ports(&self) -> impl Iterator<Item = PortRegister<'_>> {
+    pub fn ports(&self) -> impl Iterator<Item = PortRegister<'_, Immutable>> {
         // SAFETY: Each port is only produced once, so it is not possible to create two `PortRegister`
         // structs for the same port. `PortRegister` contains a phantom mutable reference to the
         (1..self.max_ports as usize).map(|port_number| unsafe {
@@ -567,11 +567,11 @@ impl OperationalRegisters {
     }
 
     /// Get an iterator over mutable the ports
-    pub fn ports_mut(&mut self) -> impl Iterator<Item = PortRegisterMut<'_>> {
+    pub fn ports_mut(&mut self) -> impl Iterator<Item = PortRegister<'_, Mutable>> {
         // SAFETY: Each port is only produced once, so it is not possible to create two `PortRegister`
         // structs for the same port. `PortRegister` contains a phantom mutable reference to the
         (1..self.max_ports as usize).map(|port_number| unsafe {
-            PortRegisterMut::new(
+            PortRegister::new_mut(
                 self.ptr.byte_add(0x400 + 0x10 * (port_number - 1)).cast(),
                 self,
             )

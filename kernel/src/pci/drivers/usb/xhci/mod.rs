@@ -130,7 +130,7 @@ impl XhciController {
 /// Defines a getter method for a type which contains a pointer to another type,
 /// using a volatile read.
 /// The macro takes 5 arguments:
-/// * `wrapper_struct`: The type of the wrapper struct. This type should have a field called `ptr` of type `*const field_struct` or `*mut field_struct`.
+/// * `wrapper_struct`: The type of the wrapper struct. This type should have a field called `ptr` which implements [`Pointer`].
 /// * `field_struct`: The type which contains the actual field being referenced.
 /// * `field`: The field for which the getter and setter will be generated.
 /// * `t`: The type of the field for which the getter and setter will be generated.
@@ -148,6 +148,7 @@ impl XhciController {
 /// * Add inherent impls to `wrapper_struct`
 /// * Access the `field` field of `field_struct`
 ///
+/// [`Pointer`]: crate::util::generic_mutability::Pointer
 /// [`read_volatile`]: core::ptr::read_volatile
 macro_rules! volatile_getter {
     (
@@ -174,12 +175,15 @@ macro_rules! volatile_getter {
             $(#[$getter_attr])*
             #[allow(clippy::redundant_closure_call)]
             $($getter_signature)+ (&self) -> $t {
+                use $crate::util::generic_mutability::Pointer;
+
                 assert!(($getter_check)(&self));
+                let ptr: *const $field_struct = self.ptr.as_const_ptr();
 
                 // SAFETY: The pointer stored in `wrapper_struct` must always be valid or this macro is unsound
                 unsafe {
                     // This reference to pointer cast also serves as a check that `$t` is actually the type of `$field`.
-                    core::ptr::read_volatile(core::ptr::addr_of!((*self.ptr).$field))
+                    core::ptr::read_volatile(core::ptr::addr_of!((*ptr).$field))
                 }
             }
     };
@@ -245,10 +249,11 @@ macro_rules! volatile_setter {
             #[allow(clippy::redundant_closure_call)]
             $($setter_signature)+ (&mut self, value: $t) {
                 assert!(($setter_check)(&self));
+                let ptr: *mut $field_struct = self.ptr;
 
                 // SAFETY: The pointer stored in `wrapper_struct` must always be valid or this macro is unsound
                 unsafe {
-                    core::ptr::write_volatile(core::ptr::addr_of_mut!((*self.ptr).$field), value)
+                    core::ptr::write_volatile(core::ptr::addr_of_mut!((*ptr).$field), value)
                 }
             }
     };
