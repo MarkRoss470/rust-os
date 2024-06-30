@@ -1,16 +1,19 @@
 //! The [`CapabilityEntry`] type for a constant view into a PCI device's capability list
 
-use crate::pci::PciMappedFunction;
+use core::fmt::Debug;
 
-use super::{msix_const::MsixCapability, MessageSignalledInterruptsCapability};
+use crate::{
+    pci::{PciMappedFunction, PcieMappedRegisters},
+    util::generic_mutability::{Mutability, Mutable, RefDebug, Reference},
+};
+
+use super::{msix::MsixCapability, MessageSignalledInterruptsCapability};
+
 
 /// A type of capability entry on a PCI device.
-///
-/// This struct represents a read-only view. If mutability is needed, use [`CapabilityEntryMut`] instead.
-///
-/// [`CapabilityEntryMut`]: super::capability_mut::CapabilityEntryMut
 #[derive(Debug)]
-pub enum CapabilityEntry<'a> {
+pub enum CapabilityEntry<'a, M: Mutability + RefDebug<'a, PcieMappedRegisters>>
+{
     /// A placeholder capability, containing no extra registers
     Null,
     /// PCI Power Management Interface.
@@ -31,7 +34,7 @@ pub enum CapabilityEntry<'a> {
     /// Documentation for this capability can be found in the _PCI-to-PCI Bridge Architecture Specification_. (TODO: link)
     SlotIdentification,
     /// Message Signalled Interrupts
-    MessageSignalledInterrupts(MessageSignalledInterruptsCapability<'a>),
+    MessageSignalledInterrupts(MessageSignalledInterruptsCapability<'a, M>),
     /// Compact PCI Hot Swap
     CompactPciHotSwap,
     /// PCI-X
@@ -61,7 +64,7 @@ pub enum CapabilityEntry<'a> {
     /// PCI Express
     PciExpress,
     /// MSI-X
-    MsiX(MsixCapability<'a>),
+    MsiX(MsixCapability<'a, M>),
     /// SATA Config
     SataConfig,
     /// Advanced Features
@@ -76,15 +79,17 @@ pub enum CapabilityEntry<'a> {
     Reserved(u8),
 }
 
-impl<'a> CapabilityEntry<'a> {
+impl<'a, M: Mutability + RefDebug<'a, PcieMappedRegisters>> CapabilityEntry<'a, M>
+{
     /// # Safety
     /// * `offset` is the register (not byte) index of a capabilities structure in the configuration space of `function`
     ///
     /// # Returns
     /// The parsed entry, and the register index of the next capability in the list
-    pub(super) unsafe fn new(function: &PciMappedFunction, offset: u8) -> (Self, u8) {
+    #[allow(clippy::cast_possible_truncation)] // Truncation is intentional
+    pub(super) unsafe fn new(function: M::Ref<'_, PciMappedFunction>, offset: u8) -> (Self, u8) {
         // SAFETY: This index was read from another PCI register, so it is correct
-        let reg = unsafe { function.read_reg(offset) };
+        let reg = unsafe { function.as_const_ref().read_reg(offset) };
 
         let id = reg as u8;
 
@@ -120,7 +125,7 @@ impl<'a> CapabilityEntry<'a> {
             0x10 => Self::PciExpress,
             // SAFETY: `offset` is a valid index,
             // and the id value is 0x11 so it is an MSI capability
-            0x11 => unsafe { Self::MsiX(MsixCapability::new(function, offset)) },
+            0x11 => unsafe { Self::MsiX(MsixCapability::new(function.as_const_ref(), offset)) },
             0x12 => Self::SataConfig,
             0x13 => Self::AdvancedFeatures,
             0x14 => Self::EnhancedAllocation,
@@ -129,5 +134,15 @@ impl<'a> CapabilityEntry<'a> {
         };
 
         (entry, next_pointer)
+    }
+}
+
+impl<'a> CapabilityEntry<'a, Mutable> {
+    /// Wrapper around [`new`] to get around an issue with the borrow checker
+    ///
+    /// [`new`]: CapabilityEntry::new
+    pub unsafe fn new_mut(function: &mut PciMappedFunction, offset: u8) -> (Self, u8) {
+        // SAFETY: Same as caller
+        unsafe { CapabilityEntry::new(function, offset) }
     }
 }

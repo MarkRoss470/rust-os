@@ -1,46 +1,51 @@
-//! The [`MessageSignalledInterruptsCapabilityMut`] type for a mutable view into a PCI device's MSI capability
+//! The [`MessageSignalledInterruptsCapability`] type for a read-only view into a PCI device's MSI capability
 
 use core::marker::PhantomData;
 
-use crate::pci::{PciMappedFunction, PcieMappedRegisters};
+use crate::{
+    pci::{PciMappedFunction, PcieMappedRegisters},
+    util::generic_mutability::{Mutability, Mutable, Pointer, Reference},
+};
 
 use super::{MsiControl, X64MsiAddress};
 
-/// A mutable view into the MSI capability of a PCI device. If mutability is not needed, use [`MessageSignalledInterruptsCapability`].
-///
-/// [`MessageSignalledInterruptsCapability`]: super::msi_const::MessageSignalledInterruptsCapability
+/// A view into the MSI capability of a PCI device
 #[derive(Debug)]
-pub struct MessageSignalledInterruptsCapabilityMut<'a> {
+pub struct MessageSignalledInterruptsCapability<'a, M: Mutability> {
     /// The memory-mapped control register
-    control: *mut MsiControl,
+    control: M::Ptr<MsiControl>,
     /// The memory-mapped least significant half of the message address register
-    message_address_low: *mut u32,
+    message_address_low: M::Ptr<u32>,
     /// The memory-mapped most significant half of the message address register
-    message_address_high: Option<*mut u32>,
+    message_address_high: Option<M::Ptr<u32>>,
 
     /// The memory-mapped data register
-    data: *mut u16,
+    data: M::Ptr<u16>,
 
     /// PhantomData for the lifetime of the memory-mapped registers
-    _p: PhantomData<&'a mut PcieMappedRegisters>,
+    _p: PhantomData<M::Ref<'a, PcieMappedRegisters>>,
 }
 
-/// An error occurring when trying to write a 64-bit address to a device which doesn't support them
-#[derive(Debug, Clone, Copy)]
-pub struct Msi64BitWriteTo32BitDeviceError;
-
-impl<'a> MessageSignalledInterruptsCapabilityMut<'a> {
+impl<'a, M: Mutability> MessageSignalledInterruptsCapability<'a, M> {
     /// # Safety:
-    /// * `offset` is the offset of an MSI capabilities structure within the configuration space of `function`
-    pub(super) unsafe fn new(function: &mut PciMappedFunction, offset: u8) -> Self {
+    /// * `offset` is the register (not byte) offset of an MSI capabilities structure within the configuration space of `function`
+    pub(super) unsafe fn new(function: M::Ref<'_, PciMappedFunction>, offset: u8) -> Self {
         // SAFETY: `offset` is the offset of an MSI capabilities structure
-        let capability_start_ptr =
-            unsafe { function.registers.as_mut_ptr::<u8>().add(offset as _) };
+        let capability_start_ptr = unsafe {
+            function
+                .as_const_ref()
+                .registers
+                .as_generic_ptr::<u32, M>()
+                .add(offset as _)
+        };
+
+        assert!(capability_start_ptr.as_const_ptr().is_aligned_to(4));
+        assert!(!capability_start_ptr.as_const_ptr().is_null());
 
         // SAFETY: The control register is at offset 2 in the MSI capabilities structure
-        let control_ptr = unsafe { capability_start_ptr.add(2).cast::<MsiControl>() };
+        let control_ptr = unsafe { capability_start_ptr.cast::<MsiControl>().add(1) };
         // SAFETY: The pointer is valid
-        let control = unsafe { control_ptr.read_volatile() };
+        let control = unsafe { control_ptr.as_const_ptr().read_volatile() };
 
         let is_64_bit = control.is_64_bit();
 
@@ -71,18 +76,10 @@ impl<'a> MessageSignalledInterruptsCapabilityMut<'a> {
 
     /// Reads the [`control`] register
     ///
-    /// [`control`]: MessageSignalledInterruptsCapabilityMut::control
+    /// [`control`]: MessageSignalledInterruptsCapability::control
     pub fn control(&self) -> MsiControl {
         // SAFETY: It's unsound to create a reference in to a `PcieMappedRegisters`, so no references exist for this data
-        unsafe { self.control.read_volatile() }
-    }
-
-    /// Writes the [`control`] register
-    ///
-    /// [`control`]: MessageSignalledInterruptsCapabilityMut::control
-    pub fn write_control(&mut self, control: MsiControl) {
-        // SAFETY: It's unsound to create a reference in to a `PcieMappedRegisters`, so no references exist for this data
-        unsafe { self.control.write_volatile(control) }
+        unsafe { self.control.as_const_ptr().read_volatile() }
     }
 
     /// Reads the message address field.
@@ -92,13 +89,34 @@ impl<'a> MessageSignalledInterruptsCapabilityMut<'a> {
         let (high, low) = unsafe {
             (
                 self.message_address_high
-                    .map(|p| p.read_volatile())
-                    .unwrap_or(0),
-                self.message_address_low.read_volatile(),
+                    .map_or(0, |p| p.as_const_ptr().read_volatile()),
+                self.message_address_low.as_const_ptr().read_volatile(),
             )
         };
 
         (high as u64) << 32 | (low as u64)
+    }
+
+    /// Reads the [`data`] register
+    ///
+    /// [`data`]: MessageSignalledInterruptsCapability::data
+    pub fn data(&self) -> u16 {
+        // SAFETY: It's unsound to create a reference in to a `PcieMappedRegisters`, so no references exist for this data
+        unsafe { self.data.as_const_ptr().read_volatile() }
+    }
+}
+
+/// An error occurring when trying to write a 64-bit address to a device which doesn't support them
+#[derive(Debug, Clone, Copy)]
+pub struct Msi64BitWriteTo32BitDeviceError;
+
+impl<'a> MessageSignalledInterruptsCapability<'a, Mutable> {
+    /// Writes the [`control`] register
+    ///
+    /// [`control`]: MessageSignalledInterruptsCapability::control
+    pub fn write_control(&mut self, control: MsiControl) {
+        // SAFETY: It's unsound to create a reference in to a `PcieMappedRegisters`, so no references exist for this data
+        unsafe { self.control.write_volatile(control) }
     }
 
     /// Writes to the message address register.
@@ -108,6 +126,7 @@ impl<'a> MessageSignalledInterruptsCapabilityMut<'a> {
         value: u64,
     ) -> Result<(), Msi64BitWriteTo32BitDeviceError> {
         let high = (value >> 32) as u32;
+        #[allow(clippy::cast_possible_truncation)] // deliberate truncation
         let low = value as u32;
 
         // SAFETY: It's unsound to create a reference in to a `PcieMappedRegisters`, so no references exist for this data
@@ -127,17 +146,9 @@ impl<'a> MessageSignalledInterruptsCapabilityMut<'a> {
         Ok(())
     }
 
-    /// Reads the [`data`] register
-    ///
-    /// [`data`]: MessageSignalledInterruptsCapabilityMut::data
-    pub fn data(&self) -> u16 {
-        // SAFETY: It's unsound to create a reference in to a `PcieMappedRegisters`, so no references exist for this data
-        unsafe { self.data.read_volatile() }
-    }
-
     /// Writes to the [`data`] register
     ///
-    /// [`data`]: MessageSignalledInterruptsCapabilityMut::data
+    /// [`data`]: MessageSignalledInterruptsCapability::data
     pub fn write_data(&mut self, data: u16) {
         // SAFETY: It's unsound to create a reference in to a `PcieMappedRegisters`, so no references exist for this data
         unsafe { self.data.write_volatile(data) }

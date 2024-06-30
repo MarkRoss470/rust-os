@@ -5,22 +5,16 @@
 #![allow(dead_code)] // TODO: remove when the warnings are better
 
 // TODO: deduplicate all these modules
-pub mod capability_const;
-pub mod capability_mut;
-pub mod msi_const;
-pub mod msi_mut;
-pub mod msix_const;
-pub mod msix_mut;
+pub mod capability;
+pub mod msi;
+pub mod msix;
 
 use core::fmt::Debug;
 
-pub use msi_const::*;
-pub use msi_mut::*;
+pub use msi::*;
+pub use capability::*;
 
-pub use msix_mut::*;
-
-pub use capability_const::*;
-pub use capability_mut::*;
+use crate::util::generic_mutability::{Immutable, Mutable};
 
 use super::PciMappedFunction;
 
@@ -221,7 +215,7 @@ impl PciMappedFunction {
     /// Gets an iterator over the capability registers of the given `function`.
     /// Each item of the returned iterator is a tuple of ([`CapabilityEntry`], [`u8`]) where the `u8`
     /// is the register index of where the capability starts
-    pub fn capabilities(&self) -> Option<impl Iterator<Item = (CapabilityEntry, u8)> + '_> {
+    pub fn capabilities(&self) -> Option<impl Iterator<Item = (CapabilityEntry<Immutable>, u8)> + '_> {
         let header = self.read_header().unwrap().unwrap();
         if !header.status.has_capabilities_list() {
             return None;
@@ -248,12 +242,12 @@ impl PciMappedFunction {
         }))
     }
 
-    /// Gets an iterator over the capability registers of the given `function`.
-    /// Each item of the returned iterator is a tuple of ([`CapabilityEntryMut`], [`u8`]) where the `u8`
+    /// Gets an iterator over the capability registers of the given `function`, returning mutable [`CapabilityEntry`]s.
+    /// Each item of the returned iterator is a tuple of ([`CapabilityEntry`], [`u8`]) where the `u8`
     /// is the register index of where the capability starts
     pub fn capabilities_mut(
         &mut self,
-    ) -> Option<impl Iterator<Item = (CapabilityEntryMut<'_>, u8)> + '_> {
+    ) -> Option<impl Iterator<Item = (CapabilityEntry<'_, Mutable>, u8)> + '_> {
         let header = self.read_header().unwrap().unwrap();
         if !header.status.has_capabilities_list() {
             return None;
@@ -271,8 +265,8 @@ impl PciMappedFunction {
             if i == 0 {
                 None
             } else {
-                // SAFETY: `i` was either read directly from the device's registers or returned from `CapabilityEntryMut::new`, so it is valid.
-                let (capability_id, next_pointer) = unsafe { CapabilityEntryMut::new(self, i) };
+                // SAFETY: `i` was either read directly from the device's registers or returned from `CapabilityEntry::new`, so it is valid.
+                let (capability_id, next_pointer) = unsafe { CapabilityEntry::new_mut(self, i) };
 
                 i = next_pointer;
 

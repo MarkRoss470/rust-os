@@ -21,6 +21,7 @@ use x86_64::PhysAddr;
 use crate::global_state::KERNEL_STATE;
 use crate::print;
 use crate::scheduler::Task;
+use crate::util::generic_mutability::{Mutability, VirtAddrGenericMutabilityExt};
 use crate::{global_state::GlobalState, println};
 use devices::*;
 use registers::HeaderType;
@@ -71,6 +72,11 @@ impl PcieMappedRegisters {
     /// Gets a mutable pointer to the start of the configuration space
     unsafe fn as_mut_ptr<T>(&self) -> *mut T {
         self.page.start_address().as_mut_ptr()
+    }
+
+    /// Gets a pointer to the start of the configuration space
+    unsafe fn as_generic_ptr<T, M: Mutability>(&self) -> M::Ptr<T> {
+        VirtAddrGenericMutabilityExt::<M>::as_generic_ptr::<T>(self.page.start_address())
     }
 
     /// Reads the register at the given offset into the configuration space.

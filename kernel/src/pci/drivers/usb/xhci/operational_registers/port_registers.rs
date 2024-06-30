@@ -600,12 +600,3 @@ impl<'a> PortRegister<'a, Mutable> {
         |v: &PortRegister<'a, Mutable>|!v.operational_registers.read_usb_status().host_controller_halted()
     );
 }
-
-impl<'a, M: PortRegisterMutability> PortRegister<'a, M> {
-    /// Borrows the [`PortRegisterMut`] as a [`PortRegister`], so that there can be multiple readers temporarily.
-    pub fn as_const(&self) -> PortRegister<'_, Immutable> {
-        // SAFETY: The lifetime of the returned `PortRegister` is the same as the borrow of self,
-        // so no mutable methods can be used while that struct exists.
-        unsafe { PortRegister::new(self.ptr.as_const_ptr()) }
-    }
-}

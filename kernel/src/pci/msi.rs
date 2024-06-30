@@ -10,15 +10,14 @@ use crate::{
     pci::{
         bar::BarValue,
         capability_registers::{
-            CapabilityEntryMut, MsixInterruptArrayMut, MsixTableEntry, MsixVectorControl,
-            X64MsiAddress, X64MsiDeliveryMode, X64MsiTriggerMode,
+            msix::MsixInterruptArray, CapabilityEntry, MsixTableEntry, MsixVectorControl, X64MsiAddress, X64MsiDeliveryMode, X64MsiTriggerMode
         },
-    },
+    }, util::generic_mutability::Mutable,
 };
 
 use super::{
     bar::Bar,
-    capability_registers::{self, MsixCapabilityMut},
+    capability_registers::{self, msix::MsixCapability},
     PciMappedFunction,
 };
 
@@ -64,14 +63,14 @@ impl PciMappedFunction {
                 debug!("{c:?}, {i:?}");
 
                 match c {
-                    CapabilityEntryMut::MessageSignalledInterrupts(msi) => {
+                    CapabilityEntry::MessageSignalledInterrupts(msi) => {
                         // SAFETY: TODO once vector allocation is done properly
                         unsafe {
                             setup_msi_standard(msi, vector)?;
                         }
                         break 'found_msi;
                     }
-                    CapabilityEntryMut::MsiX(msix) => {
+                    CapabilityEntry::MsiX(msix) => {
                         // SAFETY: TODO once vector allocation is done properly
                         unsafe {
                             setup_msix(msix, f, vector)?;
@@ -116,7 +115,7 @@ impl PciMappedFunction {
 /// * See [`setup_msi`][PciMappedFunction::setup_msi] for safety conditions related to `f`.
 /// * The caller must make sure that the interrupt handler for `vector` is set up for this device.
 unsafe fn setup_msix<'a, F>(
-    mut msix: MsixCapabilityMut<'_>,
+    mut msix: MsixCapability<'_, Mutable>,
     f: F,
     vector: u8,
 ) -> Result<(), MsiInitError>
@@ -164,7 +163,7 @@ where
 
                 // SAFETY: `ptr` points to the interrupt table.
                 // `last_index` is the last index.
-                let mut array = MsixInterruptArrayMut::new(ptr.cast(), last_index);
+                let mut array = MsixInterruptArray::new(ptr.cast(), last_index);
 
                 for i in 0..=last_index {
                     let (address, data) = X64MsiAddress {
@@ -186,7 +185,7 @@ where
                             message_data: data.into(),
                             vector_control: MsixVectorControl::new().with_masked(false),
                         },
-                    )
+                    );
                 }
             },
         );
@@ -208,7 +207,7 @@ where
 /// * This function will overwrite whatever MSI configuration is already present
 /// * The caller must make sure that the interrupt handler for `vector` is set up for this device.
 unsafe fn setup_msi_standard(
-    mut msi: capability_registers::MessageSignalledInterruptsCapabilityMut<'_>,
+    mut msi: capability_registers::MessageSignalledInterruptsCapability<'_, Mutable>,
     vector: u8,
 ) -> Result<(), MsiInitError> {
     msi.write_address_x64(X64MsiAddress {

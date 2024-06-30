@@ -2,20 +2,19 @@
 
 use core::{fmt::Debug, marker::PhantomData};
 
-use crate::pci::{PciMappedFunction, PcieMappedRegisters};
+use crate::{
+    pci::{PciMappedFunction, PcieMappedRegisters},
+    util::generic_mutability::{Mutability, Mutable, Pointer},
+};
 
 use super::{MsixControl, MsixTableEntry};
 
-#[derive(Debug)]
 /// A capability of a device to deliver interrupts using MSI-X.
 /// This struct contains methods to change the values, such as enabling or disabling MSI-X
-///
-/// This struct represents a read-only view. If mutability is needed, use [`MsixCapabilityMut`] instead.
-///
-/// [`MsixCapabilityMut`]: super::msix_mut::MsixCapabilityMut
-pub struct MsixCapability<'a> {
+#[derive(Debug)]
+pub struct MsixCapability<'a, M: Mutability> {
     /// A pointer to the control register
-    control: *const MsixControl,
+    control: M::Ptr<MsixControl>,
 
     /// The BAR number where the table of interrupt vectors is
     bir: u8,
@@ -33,7 +32,7 @@ pub struct MsixCapability<'a> {
     _p: PhantomData<&'a PcieMappedRegisters>,
 }
 
-impl<'a> MsixCapability<'a> {
+impl<'a, M: Mutability> MsixCapability<'a, M> {
     /// # Safety:
     /// * `offset` is the register (not byte) offset of an MSI capabilities structure within the configuration space of `function`
     pub(super) unsafe fn new(function: &PciMappedFunction, offset: u8) -> Self {
@@ -42,16 +41,19 @@ impl<'a> MsixCapability<'a> {
         let capability_start_ptr = unsafe {
             function
                 .registers
-                .as_mut_ptr::<u8>()
+                .as_generic_ptr::<u8, M>()
                 .add(offset as usize * 4)
         };
 
         // SAFETY: It's unsound to create a reference in to a `PcieMappedRegisters`, so no references exist for this data
         let (control, table_offset, pending_bit_offset) = unsafe {
+            assert!(capability_start_ptr.as_const_ptr().is_aligned_to(4));
+            
+            #[allow(clippy::cast_ptr_alignment)] // This alignment is checked above
             (
                 capability_start_ptr.add(2).cast(),
-                capability_start_ptr.add(4).cast::<u32>(),
-                capability_start_ptr.add(8).cast::<u32>(),
+                capability_start_ptr.as_const_ptr().add(4).cast::<u32>(),
+                capability_start_ptr.as_const_ptr().add(8).cast::<u32>(),
             )
         };
 
@@ -80,7 +82,7 @@ impl<'a> MsixCapability<'a> {
     /// Reads the capability structure's `control` register
     pub fn control(&self) -> MsixControl {
         // SAFETY: This pointer hasn't been changed since initialisation, so it's valid.
-        unsafe { self.control.read_volatile() }
+        unsafe { self.control.as_const_ptr().read_volatile() }
     }
 
     /// Gets the BAR and byte offset where the interrupt table is.
@@ -106,12 +108,24 @@ impl<'a> MsixCapability<'a> {
     }
 }
 
+impl<'a> MsixCapability<'a, Mutable> {
+    /// Writes to the capability structure's `control` register
+    ///
+    /// # Safety
+    /// * The caller is responsible for making sure the device's behaviour is sound,
+    ///     for instance that handlers are set up for any registered interrupt vectors when enabling MSI-X.
+    pub unsafe fn write_control(&mut self, value: MsixControl) {
+        // SAFETY: This pointer hasn't been changed since initialisation, so it's valid.
+        unsafe { self.control.write_volatile(value) }
+    }
+}
+
 /// The MSI-X interrupt table of a PCI device.
 ///
 /// Each entry in this table represents one type of interrupt the device can produce.
-pub struct MsixInterruptArray<'a> {
+pub struct MsixInterruptArray<'a, M: Mutability> {
     /// A pointer to the first item in the array
-    start: *const MsixTableEntry,
+    start: M::Ptr<MsixTableEntry>,
     /// The index of the last item in the array
     last_index: usize,
 
@@ -119,16 +133,16 @@ pub struct MsixInterruptArray<'a> {
     _p: PhantomData<&'a MsixTableEntry>,
 }
 
-impl<'a> MsixInterruptArray<'a> {
+impl<'a, M: Mutability> MsixInterruptArray<'a, M> {
     /// Constructs a new array
     ///
     /// # Safety
     /// * `start` must be a pointer to the interrupt table in the MMIO space of a PCI device.
     ///    The pointer must be valid for reads and writes for the lifetime `'a`
     /// * `last_index` must be the index of the last entry in the table, i.e. one less than the table's length.
-    pub unsafe fn new(start: *const MsixTableEntry, last_index: usize) -> Self {
-        assert!(start.is_aligned());
-        assert!(!start.is_null());
+    pub unsafe fn new(start: M::Ptr<MsixTableEntry>, last_index: usize) -> Self {
+        assert!(start.as_const_ptr().is_aligned());
+        assert!(!start.as_const_ptr().is_null());
 
         Self {
             start,
@@ -143,7 +157,7 @@ impl<'a> MsixInterruptArray<'a> {
             None
         } else {
             // SAFETY: The index is less than the length of the table, so this read is valid
-            unsafe { Some(self.start.add(i).read_volatile()) }
+            unsafe { Some(self.start.add(i).as_const_ptr().read_volatile()) }
         }
     }
 
@@ -164,7 +178,29 @@ impl<'a> MsixInterruptArray<'a> {
     }
 }
 
-impl<'a> Debug for MsixInterruptArray<'a> {
+impl<'a> MsixInterruptArray<'a, Mutable> {
+    /// Writes the value at the given index into the array.
+    ///
+    /// # Panics
+    /// * If `i` is past the end of the array. This can be checked using [`len`].
+    ///
+    /// # Safety
+    /// * The caller is responsible for the hardware's response to the write,
+    ///     including making sure there is a handler for the interrupt.
+    ///
+    /// [`len`]: MsixInterruptArray::len
+    pub unsafe fn write(&mut self, i: usize, value: MsixTableEntry) {
+        assert!(i <= self.last_index);
+
+        // SAFETY: The index is less than the length of the table, so the write is valid in terms of borrowing.
+        // The caller is responsible for hardware behaviour.
+        unsafe {
+            self.start.add(i).write_volatile(value);
+        }
+    }
+}
+
+impl<'a, M: Mutability> Debug for MsixInterruptArray<'a, M> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let mut l = f.debug_list();
 
