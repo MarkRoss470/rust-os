@@ -13,6 +13,10 @@
 #![feature(pointer_is_aligned_to)]
 // Nice-to-have int methods, such as `div_ceil`
 #![feature(int_roundings)]
+// Allows `impl Future` type aliases for task systems
+#![feature(type_alias_impl_trait)]
+// Allows to work with `Box<MaybeUninit<T>>` more easily
+#![feature(new_uninit)]
 // Set up warnings and lints
 #![warn(
     // clippy::pedantic,

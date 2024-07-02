@@ -5,7 +5,7 @@ use self::{command_completion::CommandCompletionTrb, port_status_change::PortSta
 use super::{GenericTrbFlags, TrbType};
 
 pub mod command_completion;
-mod port_status_change;
+pub mod port_status_change;
 
 /// An event sent from the controller to the OS on an [`EventTrbRing`]
 ///

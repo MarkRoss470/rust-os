@@ -5,10 +5,13 @@
 // TODO: actually fix these warnings instead of ignoring them
 #![allow(dead_code)]
 
-use crate::pci::devices::PciFunction;
+use core::cell::RefCell;
+
+use crate::{pci::devices::PciFunction, KERNEL_STATE};
 
 use alloc::boxed::Box;
-use log::{debug, error};
+use log::error;
+use tasks::TaskQueue;
 use x86_64::PhysAddr;
 
 use self::{
@@ -19,7 +22,7 @@ use self::{
     operational_registers::OperationalRegisters,
     runtime_registers::RuntimeRegisters,
     trb::{
-        CommandTrb, event::command_completion::CompletionCode, CommandTrbRing, EventTrb,
+        event::command_completion::CompletionCode, CommandTrb, CommandTrbRing, EventTrb,
         RingFullError,
     },
 };
@@ -33,10 +36,10 @@ mod interrupter;
 mod operational_registers;
 mod runtime_registers;
 mod scratchpad;
+mod tasks;
 mod trb;
 
 /// A specific xHCI USB controller connected to the system by PCI.
-#[derive(Debug)]
 pub struct XhciController {
     /// The PCI function where the controller is connected
     function: PciFunction,
@@ -60,23 +63,25 @@ pub struct XhciController {
 }
 
 impl XhciController {
-    /// Enters the main loop of the controller. This is called automatically by [`init`]
-    /// when the controller is set up.
-    ///
+    /// Enters the main loop of the controller. This is called by [`init`] when the controller is set up.
+    /// This function sets up a [`TaskQueue`] and continually polls it.
+    /// 
     /// [`init`]: XhciController::init
-    async fn main_loop(&mut self) -> ! {
+    async fn main_loop(self) -> ! {
+        let s = RefCell::new(self);
+        let mut tasks = TaskQueue::new(&s);
+        let mut prev_ticks = KERNEL_STATE.ticks();
+
         loop {
             futures::pending!();
+            
+            let ticks = KERNEL_STATE.ticks();
+            let tick_diff = ticks - prev_ticks;
+            prev_ticks = ticks;
+            let ns_since_last = tick_diff * (1_000_000_000 / 100);
 
-            if let Some(trb) = self.read_event_trb(0) {
-                match trb {
-                    EventTrb::MFINDEXWrap => (),
-                    EventTrb::PortStatusChange(trb) => {
-                        debug!("Port status change on port {:?}", trb.port_id);
-                    }
-                    _ => debug!("{trb:?}"),
-                }
-            }
+            let trb = s.borrow_mut().read_event_trb(0);
+            tasks.poll(ns_since_last, trb).await;
         }
     }
 
