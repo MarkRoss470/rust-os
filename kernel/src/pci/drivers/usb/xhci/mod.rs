@@ -337,4 +337,64 @@ macro_rules! volatile_accessors {
     };
 }
 
-use {volatile_accessors, volatile_getter, volatile_setter};
+/// Generates get, set, and update methods for a struct which is composed of bitfields
+/// 
+/// # Parameters
+/// * `field`: The name of the field on the struct which has the methods which will be used
+/// * `field_type`: The type of `field`
+/// * `val`: The name of the value which is being get/set
+/// * `val_type`: The type of `val`
+/// * `get`, `set`, `with`: The names of the methods to get, set, and update `val`. 
+///     These are used both as the names of the methods on `field`, and as the names of the generated methods.
+///     To omit generation of one of these methods, replace the method name with `_`.
+macro_rules! update_methods {
+    ($field: ident, $field_type: ty, $val: ident, $val_type: ty, $get: tt, $set: tt, $with: tt) => {
+        update_methods!(#get: $field, $field_type, $val, $val_type, $get);
+        update_methods!(#set: $field, $field_type, $val, $val_type, $set);
+        update_methods!(#with: $field, $field_type, $val, $val_type, $with);
+
+    };
+
+    (#get: $field: ident, $field_type: ty, $val: ident, $val_type: ty, _) => {};
+    (#get: $field: ident, $field_type: ty, $val: ident, $val_type: ty, $get: tt) => {
+        #[doc = concat!("Reads the ", update_methods!(#gen_doc: $val, $field_type))]
+        pub fn $get(&self) -> $val_type {
+            self.$field.$get()
+        }
+    };
+
+    (#set: $field: ident, $field_type: ty, $val: ident, $val_type: ty, _) => {};
+    (#set: $field: ident, $field_type: ty, $val: ident, $val_type: ty, $set: tt) => {
+        #[doc = concat!("Sets the ", update_methods!(#gen_doc: $val, $field_type))]
+        pub fn $set(&mut self, value: $val_type) {
+            self.$field.$set(value)
+        }
+    };
+
+    (#with: $field: ident, $field_type: ty, $val: ident, $val_type: ty, _) => {};
+    (#with: $field: ident, $field_type: ty, $val: ident, $val_type: ty, $with: tt) => {
+        #[doc = concat!("Updates the ", update_methods!(#gen_doc: $val, $field_type))]
+        pub fn $with(self, value: $val_type) -> Self {
+            Self {
+                $field: self.$field.$with(value),
+                ..self
+            }
+        }
+    };
+
+    (#gen_doc: $val: ident, $field_type: ty) => {
+        concat!(
+            "[`",
+            stringify!($val),
+            "`] field\n\n",
+            "[`",
+            stringify!($val),
+            "`]: ",
+            stringify!($field_type),
+            "::",
+            stringify!($val)
+        )
+    }
+}
+
+use {volatile_accessors, volatile_getter, volatile_setter, update_methods};

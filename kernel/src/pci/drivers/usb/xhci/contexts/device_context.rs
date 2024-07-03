@@ -89,12 +89,6 @@ pub struct DeviceContextRef<'a, M: Mutability> {
 }
 
 impl<'a, M: Mutability> DeviceContextRef<'a, M> {
-    /// Gets the DeviceContext's [`SlotContext`]
-    pub fn get_slot_context(&self) -> SlotContext {
-        // SAFETY: The first item in the array is the slot context
-        unsafe { self.ptr.as_const_ptr().cast::<SlotContext>().read() }
-    }
-
     /// # Safety:
     /// * `ptr` must be valid for reads for the size of a device context data structure
     ///     for the whole lifetime `'a` (if `M` is `Mutable`, it must also be valid for writes).
@@ -107,6 +101,12 @@ impl<'a, M: Mutability> DeviceContextRef<'a, M> {
             context_size,
             p: PhantomData,
         }
+    }
+
+    /// Gets the DeviceContext's [`SlotContext`]
+    pub fn get_slot_context(&self) -> SlotContext {
+        // SAFETY: The first item in the array is the slot context
+        unsafe { self.ptr.as_const_ptr().cast::<SlotContext>().read() }
     }
 
     /// The number of OUT [`EndpointContext`]s in the Device Context
@@ -180,6 +180,16 @@ impl<'a, M: Mutability> DeviceContextRef<'a, M> {
 }
 
 impl<'a> DeviceContextRef<'a, Mutable> {
+    /// Gets the DeviceContext's [`SlotContext`]
+    /// 
+    /// # Safety
+    /// * The OS must be allowed to write to the slot context (TODO: when is this true?)
+    /// * The new value must be valid. The caller is responsible for the behaviour of the controller in response to this [`EndpointContext`].
+    pub unsafe fn set_slot_context(&mut self, context: SlotContext) {
+        // SAFETY: The first item in the array is the slot context
+        unsafe { self.ptr.cast::<SlotContext>().write(context) }
+    }
+
     /// Sets the bidirectional first [`EndpointContext`]
     ///
     /// # Safety
