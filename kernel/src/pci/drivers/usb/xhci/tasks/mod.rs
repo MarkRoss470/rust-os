@@ -13,9 +13,15 @@ use alloc::{boxed::Box, vec::Vec};
 use futures::Future;
 use log::{error, warn};
 use port_status_change::{handle_port_status_change, PortStatusChangeTask};
+use x86_64::PhysAddr;
 
 use super::{
-    trb::{event::port_status_change::PortStatusChangeTrb, EventTrb},
+    trb::{
+        event::{
+            command_completion::CommandCompletionTrb, port_status_change::PortStatusChangeTrb,
+        },
+        EventTrb,
+    },
     XhciController,
 };
 
@@ -195,6 +201,34 @@ impl TaskWaker {
 
         r
     }
+
+    /// Waits for a [`CommandCompletionTrb`] responding to the command TRB at the given physical address.
+    /// If the TRB is not received within the given timeout in nanoseconds, An error is returned.
+    async fn wait_for_command_completion(
+        &self,
+        phys_addr: PhysAddr,
+        timeout_ns: usize,
+    ) -> Result<CommandCompletionTrb, TimeoutReachedError> {
+        self.0.set(Waiting::CommandCompletion {
+            command_trb_pointer: phys_addr,
+            timeout: timeout_ns,
+        });
+
+        let r = loop {
+            futures::pending!();
+
+            match self.0.get() {
+                Waiting::TimeoutReached => break Err(TimeoutReachedError),
+                Waiting::CommandCompletionReceived(trb) => break Ok(trb),
+                Waiting::CommandCompletion { .. } => (),
+                _ => panic!("Waiting state changed unexpectedly"),
+            }
+        };
+
+        self.0.set(Waiting::None);
+
+        r
+    }
 }
 
 /// What a [`Task`] is waiting for. This is used by the [`TaskWaker`] to communicate with [`poll_tasks`]
@@ -207,8 +241,9 @@ enum Waiting {
     /// The task is waiting for a timeout given in nanoseconds to expire
     TimeoutNS(usize),
     /// The task is waiting for a [`PortStatusChangeTrb`] on the given port.
-    /// If received, it will be written into the given [`Cell`]. If the timeout
-    /// reaches zero before the TRB is received, the task will be polled anyway
+    /// If the timeout reaches zero before the TRB is received, the value will be changed to [`TimeoutReached`]
+    ///
+    /// [`TimeoutReached`]: Waiting::TimeoutReached
     PortStatusChange {
         /// The [`port_id`] of the TRB
         ///
@@ -221,6 +256,22 @@ enum Waiting {
     ///
     /// [`PortStatusChange`]: Waiting::PortStatusChange
     PortStatusChangeReceived(PortStatusChangeTrb),
+    /// The task is waiting for a [`CommandCompletionTrb`] on the given port.
+    /// If the timeout reaches zero before the TRB is received, the value will be changed to [`TimeoutReached`]
+    ///
+    /// [`TimeoutReached`]: Waiting::TimeoutReached
+    CommandCompletion {
+        /// The value of [`command_trb_pointer`] which indicates the [`CommandCompletionTrb`] being waited for
+        ///
+        /// [`command_trb_pointer`]: CommandCompletionTrb::command_trb_pointer
+        command_trb_pointer: PhysAddr,
+        /// The remaining timeout in nanoseconds
+        timeout: usize,
+    },
+    /// The result of the [`CommandCompletion`] variant
+    ///
+    /// [`CommandCompletion`]: Waiting::CommandCompletion
+    CommandCompletionReceived(CommandCompletionTrb),
 }
 
 impl Waiting {
@@ -230,9 +281,11 @@ impl Waiting {
             Waiting::None => true,
             Waiting::TimeoutReached => true,
             Waiting::PortStatusChangeReceived(_) => true,
+            Waiting::CommandCompletionReceived(_) => true,
 
             Waiting::TimeoutNS(_) => false,
             Waiting::PortStatusChange { .. } => false,
+            Waiting::CommandCompletion { .. } => false,
         }
     }
 }
@@ -266,7 +319,30 @@ impl<'a: 'b, 'b> PollTasks<'a, 'b> {
                         None => Waiting::TimeoutReached,
                     },
                 },
-                s => s,
+
+                Waiting::CommandCompletion {
+                    command_trb_pointer,
+                    timeout,
+                } => match self.trb {
+                    Some(EventTrb::CommandCompletion(trb))
+                        if trb.command_trb_pointer == command_trb_pointer =>
+                    {
+                        self.trb = None;
+                        Waiting::CommandCompletionReceived(trb)
+                    }
+                    _ => match timeout.checked_sub(self.ns_since_last) {
+                        Some(timeout) => Waiting::CommandCompletion {
+                            command_trb_pointer,
+                            timeout,
+                        },
+                        None => Waiting::TimeoutReached,
+                    },
+                },
+
+                s @ (Waiting::None
+                | Waiting::TimeoutReached
+                | Waiting::PortStatusChangeReceived(_)
+                | Waiting::CommandCompletionReceived(_)) => s,
             };
 
             i.waker.0.set(new_state);
