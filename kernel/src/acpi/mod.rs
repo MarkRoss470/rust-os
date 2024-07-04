@@ -166,7 +166,7 @@ pub unsafe fn init(rsdp_addr: u64) {
 
     let acpica_initialization = acpica_initialization.initialize_tables().unwrap();
 
-    debug_tables(&acpica_initialization);
+    // debug_tables(&acpica_initialization);
 
     // SAFETY: This function is only called once. The passed mcfg is provided by the BIOS / UEFI, so it is accurate.
     unsafe { pci::init(acpica_initialization.mcfg().unwrap()) }
@@ -269,15 +269,11 @@ unsafe impl AcpiHandler for AcpiInterface {
         &mut self,
         predefined_object: &acpica_bindings::types::AcpiPredefinedNames,
     ) -> Result<Option<alloc::string::String>, acpica_bindings::status::AcpiError> {
-        debug!(target: "predefined_override", "Name: {:?}", predefined_object.name());
-        debug!(target: "predefined_override", "Object: {:?}", predefined_object.object());
-
         Ok(None)
     }
 
     // SAFETY: The returned address points to the RSDP
     fn get_root_pointer(&mut self) -> acpica_bindings::types::AcpiPhysicalAddress {
-        debug!("Root pointer is {:#x}", self.rsdp_addr);
         AcpiPhysicalAddress(self.rsdp_addr.try_into().unwrap())
     }
 

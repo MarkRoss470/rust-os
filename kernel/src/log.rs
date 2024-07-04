@@ -16,17 +16,7 @@ impl Log for KernelLogger {
             log::Level::Warn => true,
             log::Level::Trace | log::Level::Debug | log::Level::Info => {
                 #[allow(clippy::needless_bool)] // For easier modification of this code in future
-                if target.starts_with("acpi") {
-                    ![
-                        "acpi_os_create_semaphore",
-                        "acpi_os_delete_semaphore",
-                        "acpi_os_signal_semaphore",
-                        "acpi_os_wait_semaphore",
-                        "acpi_os_allocate",
-                        "acpi_os_free",
-                    ]
-                    .contains(&target)
-                } else if target.starts_with("ps2") {
+                if target.starts_with("acpi") || target.starts_with("ps2") {
                     false
                 } else {
                     true

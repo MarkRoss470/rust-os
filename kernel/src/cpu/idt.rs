@@ -40,8 +40,6 @@ pub fn register_interrupt_callback(
     interrupt_number: u8,
     callback: AcpiInterruptCallback,
 ) -> Result<(), CallbackAddError> {
-    trace!(target: "register_interrupt_callback", "Registering callback: interrupt number: {interrupt_number:#x}");
-
     let mut callbacks = ACPI_CALLBACKS
         .try_lock()
         .ok_or(CallbackAddError::LockTaken)?;

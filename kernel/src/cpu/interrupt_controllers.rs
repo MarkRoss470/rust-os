@@ -2,7 +2,6 @@
 
 use core::{fmt::Debug, sync::atomic::AtomicU64};
 
-use log::debug;
 use pic8259::ChainedPics;
 use spin::Mutex;
 use x86_64::instructions::interrupts::without_interrupts;
@@ -11,7 +10,6 @@ use crate::{
     acpi::{io_apic::IoApicRegisters, local_apic::LocalApicRegisters},
     cpu::idt::InterruptIndex,
     global_state::KERNEL_STATE,
-    println,
 };
 
 /// A type of interrupt controller that the CPU can receive interrupts from
@@ -116,8 +114,6 @@ pub unsafe fn init_pic() {
 /// # Safety
 /// This function must only be called once per core.
 pub unsafe fn init_local_apic() -> Result<(), ()> {
-    println!("Getting apic addr");
-
     let local_apic_addr = KERNEL_STATE.acpica.lock().madt().local_apic_address();
 
     // Disable interrupts while changing controller
@@ -169,8 +165,6 @@ pub unsafe fn init_local_apic() -> Result<(), ()> {
 pub unsafe fn init_io_apic() -> Result<(), ()> {
     let acpica = KERNEL_STATE.acpica.lock();
     let madt = acpica.madt();
-
-    debug!("{madt:?}");
 
     let io_apic_addr = madt.io_apic_address().unwrap().into();
 

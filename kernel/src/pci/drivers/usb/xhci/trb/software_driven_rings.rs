@@ -168,8 +168,6 @@ impl SoftwareDrivenTrbRing {
 
             self.enqueue = 0;
             self.cycle_state = !self.cycle_state;
-
-            debug!("Command ring wrap: {self:?}");
         }
 
         Ok(trb_addr)

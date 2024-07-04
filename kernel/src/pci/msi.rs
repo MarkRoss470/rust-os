@@ -10,9 +10,11 @@ use crate::{
     pci::{
         bar::BarValue,
         capability_registers::{
-            msix::MsixInterruptArray, CapabilityEntry, MsixTableEntry, MsixVectorControl, X64MsiAddress, X64MsiDeliveryMode, X64MsiTriggerMode
+            msix::MsixInterruptArray, CapabilityEntry, MsixTableEntry, MsixVectorControl,
+            X64MsiAddress, X64MsiDeliveryMode, X64MsiTriggerMode,
         },
-    }, util::generic_mutability::Mutable,
+    },
+    util::generic_mutability::Mutable,
 };
 
 use super::{
@@ -59,9 +61,7 @@ impl PciMappedFunction {
         let vector = 0xAA; // TODO: proper MSI vector allocation
 
         'found_msi: {
-            for (c, i) in self.capabilities_mut().unwrap() {
-                debug!("{c:?}, {i:?}");
-
+            for (c, _) in self.capabilities_mut().unwrap() {
                 match c {
                     CapabilityEntry::MessageSignalledInterrupts(msi) => {
                         // SAFETY: TODO once vector allocation is done properly
@@ -87,7 +87,6 @@ impl PciMappedFunction {
         // SAFETY: This sets the 'bus master' bit of the command register, which allows the device to make memory accesses
         unsafe {
             let status_and_command = self.read_reg(1);
-            debug!("status and command: {status_and_command:#x}");
             self.write_reg(1, status_and_command | (1 << 2) | (1 << 10));
 
             assert!(self
@@ -122,7 +121,7 @@ unsafe fn setup_msix<'a, F>(
 where
     F: FnOnce(u8) -> &'a Bar<'a>,
 {
-    debug!("{:?}, {:?}", msix.interrupt_table(), msix.pending_bits());
+    // debug!("{:?}, {:?}", msix.interrupt_table(), msix.pending_bits());
 
     let (bir, offset) = msix.interrupt_table();
     let bar = f(bir);
@@ -137,17 +136,17 @@ where
     let remaining_bar_space = bar_size - offset as u64;
     let needed_space = (last_index as u64 + 1) * 16;
 
-    debug!(
-        "Physical address of BAR is {:#x}",
-        base_address.as_address()
-    );
+    // debug!(
+    //     "Physical address of BAR is {:#x}",
+    //     base_address.as_address()
+    // );
 
-    debug!(
-        "16 bytes * {:#x} entries = {:#x} bytes, remaining BAR length is {:#x}",
-        last_index + 1,
-        needed_space,
-        remaining_bar_space
-    );
+    // debug!(
+    //     "16 bytes * {:#x} entries = {:#x} bytes, remaining BAR length is {:#x}",
+    //     last_index + 1,
+    //     needed_space,
+    //     remaining_bar_space
+    // );
 
     assert!(remaining_bar_space >= needed_space);
 
@@ -159,8 +158,6 @@ where
             base_address.as_address() + offset as u64,
             needed_space.try_into().unwrap(),
             |ptr| {
-                debug!("Array mapped at {ptr:p}");
-
                 // SAFETY: `ptr` points to the interrupt table.
                 // `last_index` is the last index.
                 let mut array = MsixInterruptArray::new(ptr.cast(), last_index);

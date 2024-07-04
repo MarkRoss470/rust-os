@@ -12,7 +12,6 @@ use acpica_bindings::types::tables::mcfg::Mcfg;
 use alloc::sync::Arc;
 use alloc::{collections::VecDeque, vec::Vec};
 use core::mem::size_of;
-use log::debug;
 use x86_64::structures::paging::frame::PhysFrameRange;
 use x86_64::structures::paging::page::PageRange;
 use x86_64::structures::paging::{Page, PhysFrame};
@@ -506,12 +505,6 @@ pub unsafe fn init(mcfg: Mcfg) {
 
     for function in lock.functions_mut() {
         let header = function.read_header().unwrap().unwrap();
-
-        if let Some(capabilities) = function.capabilities() {
-            for (c, i) in capabilities {
-                debug!("{c:?}, {i}");
-            }
-        }
 
         if let classcodes::ClassCode::SerialBusController(SerialBusControllerType::UsbController(
             classcodes::USBControllerType::Xhci,

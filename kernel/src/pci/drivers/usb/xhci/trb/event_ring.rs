@@ -78,8 +78,6 @@ impl EventTrbRing {
         if raw[3] & 1 == self.cycle_state as u32 {
             self.dequeue += 1;
             if self.dequeue >= Self::SEGMENT_SIZE.into() {
-                debug!("Event ring wrap");
-
                 self.dequeue = 0;
                 self.cycle_state = !self.cycle_state;
             }

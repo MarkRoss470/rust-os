@@ -295,8 +295,7 @@ pub unsafe fn init_ps2() {
     // SAFETY: This function is only called once
     unsafe {
         if let Some(controller) = Ps2Controller8042::new() {
-            println!("{controller:?}");
-            PS2_CONTROLLER.init(controller.unwrap())
+            PS2_CONTROLLER.init(controller.unwrap());
         } else {
             println!("No PS/2 Controller");
         }

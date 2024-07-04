@@ -27,12 +27,12 @@ pub unsafe fn init(boot_info: &'static mut BootInfo) {
     log::init_log();
 
     KERNEL_STATE.page_table.init(page_table);
-    println!("Initialised page table");
+    // println!("Initialised page table");
 
-    println!(
-        "Physical memory offset: {:#x}",
-        boot_info.physical_memory_offset.into_option().unwrap()
-    );
+    // println!(
+    //     "Physical memory offset: {:#x}",
+    //     boot_info.physical_memory_offset.into_option().unwrap()
+    // );
 
     // Get initrd and store in KERNEL_STATE
     // SAFETY: The bootloader has loaded the initrd here, so it is sound to construct this slice
@@ -51,15 +51,15 @@ pub unsafe fn init(boot_info: &'static mut BootInfo) {
     // SAFETY: This function is only called once.
     unsafe { cpu::init_kernel_stack() }
 
-    println!("Initialised frame allocator");
+    // println!("Initialised frame allocator");
 
     // SAFETY: This function is only called once. The provided `boot_info` is correct, so so are `offset_page_table` and `frame_allocator`
     unsafe { allocator::init_heap().expect("Initialising the heap should have succeeded") }
 
-    println!("Initialised heap");
+    // println!("Initialised heap");
 
     init_graphics(boot_info.framebuffer.as_mut().unwrap());
-    println!("Initialised graphics");
+    // println!("Initialised graphics");
 
     let _ = flush();
 
@@ -74,7 +74,7 @@ pub unsafe fn init(boot_info: &'static mut BootInfo) {
 
     init_keybuffer();
 
-    println!("Initialising APIC");
+    // println!("Initialising APIC");
     let _ = flush();
 
     // SAFETY: This function is only called once.
@@ -92,7 +92,7 @@ pub unsafe fn init(boot_info: &'static mut BootInfo) {
     // SAFETY: This function is only called once.
     // unsafe { devices::init() };
 
-    println!("Finished initialising kernel");
+    // println!("Finished initialising kernel");
     let _ = flush();
 }
 

@@ -6,6 +6,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use bootloader::BootConfig;
 use clap::Parser;
 use rayon::prelude::*;
 
@@ -86,10 +87,13 @@ fn prepare_cargo_command(args: &Args, dir: &str, subcommand: &str) -> Command {
 /// # Arguments
 /// * `file`: the file path to load as a disk image
 /// * `test`: whether to run the kernel in test mode.
-/// If `true`, a device will be added to allow the kernel to exit without usual power management, and no window will be shown.
+///    If `true`, a device will be added to allow the kernel to exit without usual power management, and no window will be shown.
 fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
     let mut c = std::process::Command::new("qemu-system-x86_64");
-    let bios_path = args.bios_path.as_ref().expect("bios_path should have been set");
+    let bios_path = args
+        .bios_path
+        .as_ref()
+        .expect("bios_path should have been set");
 
     c.arg("-bios").arg(bios_path);
 
@@ -119,7 +123,7 @@ fn prepare_qemu_command(args: &Args, file: &str, test: bool) -> Command {
             .arg(format!("file:{file}")); // Redirect serial to given file
 
         if let Some(ref qemu_file) = args.qemu_debug {
-            c.arg("-D").arg(format!("{qemu_file}")).arg("-d").arg("int");
+            c.arg("-D").arg(qemu_file).arg("-d").arg("int");
         }
     } else {
         c.arg("-serial").arg("stdio"); // Redirect serial to stdout
@@ -138,8 +142,8 @@ fn prepare_kernel_and_initrd(args: &Args, kernel_in: &Path, kernel_out: &Path, i
     let mut objcopy_command = Command::new("objcopy");
     objcopy_command
         .arg("--strip-debug")
-        .arg(&kernel_in)
-        .arg(&kernel_out);
+        .arg(kernel_in)
+        .arg(kernel_out);
 
     let objcopy_success = objcopy_command
         .status()
@@ -150,10 +154,10 @@ fn prepare_kernel_and_initrd(args: &Args, kernel_in: &Path, kernel_out: &Path, i
 
     if args.release {
         // The bootloader crate doesn't like empty initrds, so put a todo message there
-        fs::write(&initrd_out, b"TODO: initrd for release builds")
+        fs::write(initrd_out, b"TODO: initrd for release builds")
             .expect("Should have been able to create an initrd file");
     } else {
-        fs::copy(&kernel_in, &initrd_out)
+        fs::copy(kernel_in, initrd_out)
             .expect("Should have been able to copy from kernel to initrd");
     }
 }
@@ -210,11 +214,17 @@ fn main() -> ExitCode {
 
     prepare_kernel_and_initrd(args, &kernel, &kernel_no_debug, &initrd);
 
+    let config = {
+        let mut config = BootConfig::default();
+        config.log_level = bootloader_boot_config::LevelFilter::Warn;
+        config
+    };
 
     // create a UEFI disk image
     let uefi_path = out_dir.join("uefi.img");
     bootloader::UefiBoot::new(&kernel_no_debug)
         .set_ramdisk(&initrd)
+        .set_boot_config(&config)
         .create_disk_image(&uefi_path)
         .expect("Should have been able to create UEFI image");
 
@@ -334,7 +344,7 @@ fn run_qemu_tests(
     test_nums
         .into_par_iter()
         .try_for_each(|i| -> Result<(), io::Error> {
-            let success = run_qemu_test(i, args, &uefi_path)?;
+            let success = run_qemu_test(i, args, uefi_path)?;
             total.fetch_add(1, Ordering::Relaxed);
 
             if !success {

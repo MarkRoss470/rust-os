@@ -61,15 +61,11 @@ impl XhciController {
             )
         };
 
-        debug!("{}: Allocating command ring", function.function);
-
         let command_ring = CommandTrbRing::new();
 
         operational_registers.write_device_context_base_address_array_pointer(
             DeviceContextBaseAddressArrayPointer::from_pointer(dcbaa.array_addr()),
         );
-
-        debug!("{}: Writing command ring pointer", function.function);
 
         // Check that the command ring isn't running before writing pointer
         assert!(!operational_registers
@@ -102,8 +98,6 @@ impl XhciController {
             interrupters,
             doorbell_registers,
         };
-
-        debug!("{}: Enabling controller", function.function);
 
         // Make sure `host_controller_halted` is set before starting controller
         assert!(controller
@@ -139,21 +133,7 @@ impl XhciController {
             .host_controller_doorbell()
             .ring();
 
-        debug!("{}: Testing command and event rings", function.function);
-
         controller.test_command_ring().await;
-
-        debug!("{}: Polling event ring", function.function);
-
-        debug!(
-            "{}: Number of attached devices: {}",
-            function.function,
-            controller
-                .operational_registers
-                .ports()
-                .filter(|port| port.read_status_and_control().device_connected())
-                .count()
-        );
 
         for mut port in controller.operational_registers.ports_mut() {
             port.write_status_and_control(
@@ -165,7 +145,7 @@ impl XhciController {
     }
 
     /// Adds [`NoOp`] TRBs to the control ring and then waits for a response.
-    /// Repeats until the command wring has wrapped 4 times.
+    /// Repeats until the command ring has wrapped 4 times.
     ///
     /// # Panics
     /// Panics if an error occurs while writing a TRB or waiting for a response
@@ -261,12 +241,6 @@ unsafe fn init_mmio(
 ///
 /// This function also sanity checks that the device is actually an XHCI controller.
 fn parse_header(function: &PciMappedFunction) -> PciGeneralDeviceHeader {
-    debug!(
-        "PCIe registers are at physical address {:?}",
-        function.registers.phys_frame
-    );
-    debug!("{}: Reading header", function.function);
-
     let header = function.read_header().unwrap().unwrap();
     let HeaderType::GeneralDevice(general_device_header) = header.header_type else {
         panic!("Device is not an XHCI controller")
@@ -295,8 +269,6 @@ unsafe fn map_mmio(
     // SAFETY: XHCI controllers are guaranteed to have a BAR in BAR slot 0
     // No other `Bar` exists.
     let bar = unsafe { general_device_header.bar(function, 0) };
-
-    bar.debug();
 
     let mmio = bar.get_frames();
 
@@ -328,19 +300,6 @@ unsafe fn find_registers(
 ) {
     // SAFETY: The XHCI capability registers struct is guaranteed to be at this location in memory.
     let capability_registers = unsafe { CapabilityRegisters::new(mapped_mmio) };
-
-    debug!(
-        "Operational registers offset: {:#x}",
-        capability_registers.capability_register_length()
-    );
-    debug!(
-        "Runtime registers offset: {:#x}",
-        capability_registers.runtime_register_space_offset()
-    );
-    debug!(
-        "Doorbell registers offset: {:#x}",
-        capability_registers.doorbell_offset()
-    );
 
     // SAFETY: The XHCI operational registers struct is guaranteed to be at this location in memory.
     let operational_registers = unsafe {

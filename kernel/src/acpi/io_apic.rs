@@ -211,8 +211,6 @@ impl IoApicRegisters {
     /// `ptr` must point to a valid system I/O APIC.
     /// This function may only be called once per APIC.
     pub unsafe fn new(ptr: PhysAddr) -> Self {
-        debug!("Creating IoApicRegisters at {ptr:?}");
-
         let start = PhysFrame::containing_address(ptr);
         let frames = PhysFrameRange {
             start,
@@ -314,7 +312,6 @@ impl IoApicRegisters {
         vector: u8,
         entry: RedirectionEntry,
     ) -> Result<(), ()> {
-        debug!(target: "write_redirection_entry", "vector: {vector}, maximum redirection entry: {}", self.get_version().maximum_redirection_entry());
         assert!(vector <= self.get_version().maximum_redirection_entry());
 
         let vector = vector as u32;

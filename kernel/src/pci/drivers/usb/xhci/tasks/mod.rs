@@ -11,7 +11,7 @@ use core::{
 
 use alloc::{boxed::Box, vec::Vec};
 use futures::Future;
-use log::{error, warn};
+use log::{debug, error, warn};
 use port_status_change::{handle_port_status_change, PortStatusChangeTask};
 use x86_64::PhysAddr;
 
@@ -397,6 +397,12 @@ impl<'a> TaskQueue<'a> {
     fn push(&mut self, trb: EventTrb) {
         if let Some(task) = Task::new(self.1, trb) {
             self.0.push(task);
+        } else {
+            // Debug any unhandled TRB except for MFINDEXWrap TRBs
+            match trb {
+                EventTrb::MFINDEXWrap => (),
+                _ => debug!("{trb:?}"),
+            }
         }
     }
 
