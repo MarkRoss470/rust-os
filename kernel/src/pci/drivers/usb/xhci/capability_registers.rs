@@ -345,7 +345,7 @@ pub struct CapabilityParameters2 {
     /// See the spec section [4.15.1] for more info.
     ///
     /// [4.15.1]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A285%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C591%2C0%5D
-    supports_u3_entry: bool,
+    pub supports_u3_entry: bool,
 
     /// Whether a _Configure Endpoint Command_ is capable of generating a _Max Exit Latency Too Large Capability Error_.
     /// This capability is enabled by the CME flag in the USBCMD register.
@@ -354,7 +354,7 @@ pub struct CapabilityParameters2 {
     ///
     /// [4.23.5.2]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A363%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C637%2C0%5D
     /// [5.4.1]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A400%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C554%2C0%5D
-    can_generate_max_latency_too_large_error: bool,
+    pub can_generate_max_latency_too_large_error: bool,
 
     /// Whether the controller supports the _Force Save Context Capability_.
     ///
@@ -362,21 +362,21 @@ pub struct CapabilityParameters2 {
     ///
     /// [4.23.2]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A348%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C219%2C0%5D
     /// [5.4.1]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A400%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C554%2C0%5D
-    supports_force_save_context: bool,
+    pub supports_force_save_context: bool,
 
     /// Whether the USB3 root hub supports the _Compliance Transition Enable_ (CTE) flag.
     ///
     /// See the spec section [4.19.1.2.4.1] for more info.
     ///
     /// [4.19.1.2.4.1]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A314%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C635%2C0%5D
-    supports_compliance_transition: bool,
+    pub supports_compliance_transition: bool,
 
     /// Whether the controller supports ESIT payloads greater than 48KB.
     ///
     /// See the spec section [6.2.3.8] for more info.
     ///
     /// [6.2.3.8]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A464%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C601%2C0%5D
-    supports_large_esit_payload: bool,
+    pub supports_large_esit_payload: bool,
 
     /// Whether the controller supports extended Configuration Information.
     /// If `true`, the _Configuration Value_, _Interface Number_, and _Alternate Setting_ fields in the
@@ -385,14 +385,14 @@ pub struct CapabilityParameters2 {
     /// See the spec section [6.2.5.1] for more info.
     ///
     /// [6.2.5.1]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A468%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C694%2C0%5D
-    supports_extended_configuration_information: bool,
+    pub supports_extended_configuration_information: bool,
 
     /// Whether the TBC field in an Isoch TRB supports the definition of _Burst Counts_ greater than 65535 bytes.
     ///
     /// See the spec section [4.11.2.3]
     ///
     /// [4.11.2.3]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A222%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C267%2C0%5D
-    supports_extended_tbc: bool,
+    pub supports_extended_tbc: bool,
 
     /// Whether the  TBC/TRBSts field in an Isoch TRB indicates additional information regarding TRB in the TD.\
     /// If `true`, the Isoch TRB TD Size/TBC field presents TBC value and TBC/TRBSts field presents the TRBSts value.\
@@ -401,7 +401,7 @@ pub struct CapabilityParameters2 {
     /// See the spec section [4.11.2.3] for more info.
     ///
     /// [4.11.2.3]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A222%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C267%2C0%5D
-    supports_extended_tbc_trb_status: bool,
+    pub supports_extended_tbc_trb_status: bool,
 
     /// Whether the controller supports the _Get Extended Property_ and _Set Extended Property_ commands.
     ///
@@ -409,11 +409,11 @@ pub struct CapabilityParameters2 {
     ///
     /// [4.6.17]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A162%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C666%2C0%5D
     /// [4.6.18]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A165%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C694%2C0%5D
-    supports_extended_property_get_set: bool,
+    pub supports_extended_property_get_set: bool,
 
     /// Whether the controller supports the _Virtualisation based Trusted IO Capability_.
     /// This capability is enabled by the VTIOE flag in the USBCMD register.
-    supports_virtualisation_based_trusted_io: bool,
+    pub supports_virtualisation_based_trusted_io: bool,
 
     #[bits(22)]
     __: (),
@@ -466,33 +466,33 @@ impl CapabilityParameters2 {
 /// [5.3]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A387%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C176%2C0%5D
 #[repr(C, align(4))]
 #[derive(Clone, Copy)]
-pub struct CapabilityRegistersFields {
+struct CapabilityRegistersFields {
     /// The length of the capability registers.
     /// The [`OperationalRegisters`][super::operational_registers::OperationalRegisters] start this number of bytes after the capability registers.
-    pub capability_register_length: u8,
+    capability_register_length: u8,
 
     #[doc(hidden)]
     _reserved0: u8,
 
     /// The interface version number. This is a binary coded decimal encoding of the three-part version number.
     /// For instance, a value of `0x0100` is `1.0.0`, `0x0110` is `1.1.0`, `0x0090` is `0.9.0`.
-    pub version: u16,
+    version: u16,
 
     /// The first structural parameters register
-    pub structural_parameters_1: StructuralParameters1,
+    structural_parameters_1: StructuralParameters1,
     /// The second structural parameters register
-    pub structural_parameters_2: StructuralParameters2,
+    structural_parameters_2: StructuralParameters2,
     /// The third structural parameters register
-    pub structural_parameters_3: StructuralParameters3,
+    structural_parameters_3: StructuralParameters3,
 
     /// The first capability parameters register
-    pub capability_parameters_1: CapabilityParameters1,
+    capability_parameters_1: CapabilityParameters1,
     /// The doorbell offset register
-    pub doorbell_offset: DoorbellOffsetRegister,
+    doorbell_offset: DoorbellOffsetRegister,
     /// The runtime register space offset register
-    pub runtime_register_space_offset: RuntimeRegisterSpaceOffsetRegister,
+    runtime_register_space_offset: RuntimeRegisterSpaceOffsetRegister,
     /// The second capability parameters register
-    pub capability_parameters_2: CapabilityParameters2,
+    capability_parameters_2: CapabilityParameters2,
 }
 
 #[rustfmt::skip]
