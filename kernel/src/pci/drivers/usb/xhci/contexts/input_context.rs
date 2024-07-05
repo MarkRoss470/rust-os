@@ -297,7 +297,7 @@ impl<'a> InputControlContext<'a, Mutable> {
 
 impl<'a, M: Mutability> Debug for InputControlContext<'a, M> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("InputContext")
+        f.debug_struct("InputControlContext")
             .field("drop_context_flags", &self.drop_context_flags())
             .field("add_context_flags", &self.add_context_flags())
             .field("configuration_value", &self.configuration_value())
