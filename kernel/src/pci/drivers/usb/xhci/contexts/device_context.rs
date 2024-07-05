@@ -113,7 +113,7 @@ impl<'a, M: Mutability> DeviceContextRef<'a, M> {
     /// Gets the DeviceContext's [`SlotContext`]
     pub fn get_slot_context(&self) -> SlotContext {
         // SAFETY: The first item in the array is the slot context
-        unsafe { self.ptr.as_const_ptr().cast::<SlotContext>().read() }
+        unsafe { self.ptr.as_const_ptr().cast::<SlotContext>().read_volatile() }
     }
 
     /// The number of OUT [`EndpointContext`]s in the Device Context
@@ -127,7 +127,7 @@ impl<'a, M: Mutability> DeviceContextRef<'a, M> {
     fn in_len(&self) -> usize {
         let context_entries: usize = self.get_slot_context().context_entries().into();
 
-        (context_entries - 1) / 2
+        (context_entries.saturating_sub(1)) / 2
     }
 
     /// Gets the bidirectional first [`EndpointContext`]
@@ -194,7 +194,7 @@ impl<'a> DeviceContextRef<'a, Mutable> {
     /// * The new value must be valid. The caller is responsible for the behaviour of the controller in response to this [`EndpointContext`].
     pub unsafe fn set_slot_context(&mut self, context: SlotContext) {
         // SAFETY: The first item in the array is the slot context
-        unsafe { self.ptr.cast::<SlotContext>().write(context) }
+        unsafe { self.ptr.cast::<SlotContext>().write_volatile(context) }
     }
 
     /// Sets the bidirectional first [`EndpointContext`]
