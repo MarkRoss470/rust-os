@@ -18,7 +18,8 @@ use x86_64::PhysAddr;
 use super::{
     trb::{
         event::{
-            command_completion::CommandCompletionTrb, port_status_change::PortStatusChangeTrb,
+            command_completion::{CommandCompletionTrb, CompletionCode},
+            port_status_change::PortStatusChangeTrb,
         },
         EventTrb,
     },
@@ -144,7 +145,31 @@ impl<'a> Debug for TaskType<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TimeoutReachedError;
 
-/// Stores what a [`Task`] is waiting for. This will be checked by [`poll_tasks`] to decide whether
+/// An error occurring while waiting for a [`CommandCompletionTrb`]
+/// 
+/// `T` is the type of TRB being waited for
+#[derive(Debug, Clone, Copy)]
+enum EventTrbError<T> {
+    /// A timeout expired
+    TimeoutReached(TimeoutReachedError),
+    /// The [`CompletionCode`] was not [`Success`]
+    /// 
+    /// [`Success`]: CompletionCode::Success 
+    CompletionError(CompletionCode, T),
+}
+
+impl<T> From<TimeoutReachedError> for EventTrbError<T> {
+    fn from(v: TimeoutReachedError) -> Self {
+        Self::TimeoutReached(v)
+    }
+}
+
+/// An error occurring while waiting for a [`PortStatusChangeTrb`]
+type PortStatusChangeError = EventTrbError<PortStatusChangeTrb>;
+/// An error occurring while waiting for a [`CommandCompletionTrb`]
+type CommandCompletionError = EventTrbError<CommandCompletionTrb>;
+
+/// Stores what a [`Task`] is waiting for. This will be checked by [`TaskQueue::poll`] to decide whether
 /// or not to poll a given task. If the task is waiting for some data (e.g. a TRB), the data may also
 /// be written to the task's [`TaskWaker`]. The task's future will be passed a reference to the waker,
 /// and can use methods such as [`wait_for_timeout`] to wait for certain conditions to be met.
@@ -180,7 +205,7 @@ impl TaskWaker {
         &self,
         port_id: u8,
         timeout_ns: usize,
-    ) -> Result<PortStatusChangeTrb, TimeoutReachedError> {
+    ) -> Result<PortStatusChangeTrb, PortStatusChangeError> {
         self.0.set(Waiting::PortStatusChange {
             port: port_id,
             timeout: timeout_ns,
@@ -199,16 +224,25 @@ impl TaskWaker {
 
         self.0.set(Waiting::None);
 
-        r
+        let trb = r?;
+
+        match trb.completion_code {
+            CompletionCode::Success => Ok(trb),
+            code => Err(EventTrbError::CompletionError(code, trb)),
+        }
     }
 
     /// Waits for a [`CommandCompletionTrb`] responding to the command TRB at the given physical address.
-    /// If the TRB is not received within the given timeout in nanoseconds, An error is returned.
+    /// If the TRB is not received within the given timeout in nanoseconds, A [`TimeoutReachedError`] is returned.
+    /// If the TRB is received but the status code is not [`Success`], a [`CompletionError`] is returned.
+    /// 
+    /// [`Success`]: CompletionCode::Success
+    /// [`CompletionError`]: CommandCompletionError::CompletionError
     async fn wait_for_command_completion(
         &self,
         phys_addr: PhysAddr,
         timeout_ns: usize,
-    ) -> Result<CommandCompletionTrb, TimeoutReachedError> {
+    ) -> Result<CommandCompletionTrb, EventTrbError<CommandCompletionTrb>> {
         self.0.set(Waiting::CommandCompletion {
             command_trb_pointer: phys_addr,
             timeout: timeout_ns,
@@ -227,11 +261,16 @@ impl TaskWaker {
 
         self.0.set(Waiting::None);
 
-        r
+        let trb = r?;
+
+        match trb.completion_code {
+            CompletionCode::Success => Ok(trb),
+            code => Err(EventTrbError::CompletionError(code, trb)),
+        }
     }
 }
 
-/// What a [`Task`] is waiting for. This is used by the [`TaskWaker`] to communicate with [`poll_tasks`]
+/// What a [`Task`] is waiting for. This is used by the [`TaskWaker`] to communicate with [`TaskQueue::poll`]
 #[derive(Debug, Clone, Copy)]
 enum Waiting {
     /// The task is not waiting for anything and should be polled immediately

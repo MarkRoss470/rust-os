@@ -33,7 +33,7 @@ enum ErrorKind {
     /// The initial TRB had a non-success completion code
     InitialError(CompletionCode),
     /// The port failed to reset
-    Reset(CompletionCode),
+    Reset(PortStatusChangeError),
     /// A timeout expired
     Timeout,
 }
@@ -85,7 +85,7 @@ async fn reset_usb2_port(
     controller: &RefCell<XhciController>,
     port_id: u8,
     t: &TaskWaker,
-) -> Result<(), Error> {
+) -> Result<(), ErrorKind> {
     debug!("Resetting USB2 port");
 
     // Write the reset flag to reset the port
@@ -102,22 +102,10 @@ async fn reset_usb2_port(
     }
 
     // Wait for a PortStatusChange TRB indicating that the port has been reset
-    match t.wait_for_port_status_change(port_id, TIMEOUT_1_SECOND).await {
-        Ok(trb) => {
-            if trb.completion_code != CompletionCode::Success {
-                return Err(Error {
-                    port_id,
-                    kind: ErrorKind::Reset(trb.completion_code),
-                });
-            }
-        }
-        Err(TimeoutReachedError) => {
-            return Err(Error {
-                port_id,
-                kind: ErrorKind::Timeout,
-            });
-        }
-    };
+    let trb = t
+        .wait_for_port_status_change(port_id, TIMEOUT_1_SECOND)
+        .await
+        .map_err(ErrorKind::Reset)?;
 
     Ok(())
 }
@@ -128,5 +116,12 @@ pub fn handle_port_status_change<'a>(
     t: &'a TaskWaker,
     trb: PortStatusChangeTrb,
 ) -> PortStatusChangeTask<'a> {
+    async move {
     handle_port_status_change_inner(s, t, trb)
+            .await
+            .map_err(|kind| Error {
+                port_id: trb.port_id,
+                kind,
+            })
+    }
 }
