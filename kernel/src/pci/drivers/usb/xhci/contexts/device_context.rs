@@ -188,7 +188,7 @@ impl<'a, M: Mutability> DeviceContextRef<'a, M> {
 
 impl<'a> DeviceContextRef<'a, Mutable> {
     /// Gets the DeviceContext's [`SlotContext`]
-    /// 
+    ///
     /// # Safety
     /// * The OS must be allowed to write to the slot context (TODO: when is this true?)
     /// * The new value must be valid. The caller is responsible for the behaviour of the controller in response to this [`EndpointContext`].
@@ -233,6 +233,22 @@ impl<'a> DeviceContextRef<'a, Mutable> {
                 .cast::<EndpointContext>()
                 .byte_add(self.context_size.bytes() * (2 * i + 1))
                 .write_volatile(context);
+        }
+    }
+
+    /// Resets the device context by writing all values in it to 0.
+    /// 
+    /// # Safety
+    /// * The OS must be allowed to write to the endpoint context (TODO: when is this true?)
+    pub unsafe fn reset(&mut self) {
+        /// How many `usize`s fit in a device context
+        const U64_IN_DEVICE_CONTEXT: usize = 0x400 / 8;
+
+        // SAFETY: The OS allowed to write to this context
+        unsafe {
+            self.ptr
+                .cast::<[u64; U64_IN_DEVICE_CONTEXT]>()
+                .write_volatile([0; U64_IN_DEVICE_CONTEXT]);
         }
     }
 }
