@@ -502,7 +502,6 @@ impl PortRegisterMutability for Mutable {
 
 /// A wrapper around the [`PortRegisterFields`] which ensures that all reads are volatile.
 /// Behaves like a shared reference.
-#[derive(Debug)]
 pub struct PortRegister<'a, M: PortRegisterMutability> {
     /// The pointer
     ptr: M::Ptr<PortRegisterFields>,
@@ -599,4 +598,15 @@ impl<'a> PortRegister<'a, Mutable> {
         (pub fn write_hardware_lpm_control),
         |v: &PortRegister<'a, Mutable>|!v.operational_registers.read_usb_status().host_controller_halted()
     );
+}
+
+impl<'a, M: PortRegisterMutability> Debug for PortRegister<'a, M> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("PortRegister")
+            .field("status_and_control", &self.read_status_and_control())
+            .field("power_management", &self.read_power_management())
+            .field("link_info", &self.read_link_info())
+            .field("hardware_lpm_control", &self.read_hardware_lpm_control())
+            .finish()
+    }
 }
