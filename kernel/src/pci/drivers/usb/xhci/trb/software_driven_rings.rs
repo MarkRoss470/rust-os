@@ -222,12 +222,16 @@ impl CommandTrbRing {
 
     /// Writes a TRB to the buffer.
     ///
+    /// # Warning
     /// This function does not ring the host controller doorbell, so the caller must do so to inform the controller to process the TRB.
+    /// To write a TRB and ring the doorbell, use [`XhciController::write_command_trb`].
     ///
     /// Returns the physical address of the queued TRB, to identify this TRB in future event TRBs.
     ///
     /// # Safety
-    /// * The caller is responsible for the behaviour of the controller in response to this TRB
+    /// * The caller is responsible for the behaviour of the controller in response to this TRB.
+    /// 
+    /// [`XhciController::write_command_trb`]: super::super::XhciController::write_command_trb
     pub unsafe fn enqueue(&mut self, trb: CommandTrb) -> Result<PhysAddr, RingFullError> {
         // SAFETY: This is just a wrapper function, so the safety requirements are the same.
         unsafe { self.0.enqueue(|cycle| trb.to_parts(cycle)) }

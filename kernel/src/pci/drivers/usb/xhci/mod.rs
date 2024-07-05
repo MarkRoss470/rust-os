@@ -85,7 +85,7 @@ impl XhciController {
         }
     }
 
-    /// Writes a TRB to the command ring
+    /// Writes a TRB to the command ring and rings the host controller doorbell to notify the controller to process it.
     ///
     /// # Safety
     /// The caller is responsible for the behaviour of the controller in response to this TRB
