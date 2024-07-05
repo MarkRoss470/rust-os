@@ -288,6 +288,10 @@ impl SlotState {
 }
 
 /// Defines information relating to a device as a whole.
+/// 
+/// Defined in the spec section [6.2.2]
+/// 
+/// [6.2.2]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A451%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C668%2C0%5D
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SlotContext {
