@@ -16,11 +16,10 @@ use crate::{
     },
 };
 
-/// The XHCI _Device Context_ data structure.
+/// A [device context] in the [`DeviceContextBaseAddressArray`]. This is an _Output Device Context_.
 ///
-/// This data structure is defined in the spec section [6.2.1].
-///
-/// [6.2.1]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A449%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C361%2C0%5D
+/// [device context]: DeviceContextRef
+/// [`DeviceContextBaseAddressArray`]: super::super::dcbaa::DeviceContextBaseAddressArray
 pub struct OwnedDeviceContext {
     /// The page where the data structure is in memory
     page: PageBox,
@@ -76,7 +75,15 @@ impl OwnedDeviceContext {
     }
 }
 
-/// A reference to a _Device Context_ data structure.
+/// A reference to a _Device Context_ data structure. Device contexts can be either _Input Device Contexts_ if they are part of an [`InputContext`]
+/// or [_Output Device Contexts_] if they are stored in the [`DeviceContextBaseAddressArray`] 
+/// 
+/// This data structure is defined in the spec section [6.2.1].
+///
+/// [`InputContext`]: super::input_context::InputContext
+/// [_Output Device Contexts_]: OwnedDeviceContext
+/// [`DeviceContextBaseAddressArray`]: super::super::dcbaa::DeviceContextBaseAddressArray
+/// [6.2.1]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A449%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C361%2C0%5D
 pub struct DeviceContextRef<'a, M: Mutability> {
     /// The pointer where the device context is
     ptr: M::Ptr<()>,
