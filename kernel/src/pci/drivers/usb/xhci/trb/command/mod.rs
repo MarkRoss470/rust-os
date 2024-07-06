@@ -1,5 +1,7 @@
 //! The [`CommandTrb`] type
 
+use address_device::AddressDeviceTrb;
+
 use crate::pci::drivers::usb::xhci::trb::GenericTrbFlags;
 
 use self::{
@@ -11,6 +13,7 @@ use super::{link::LinkTrb, TrbType};
 
 pub mod configure_endpoint;
 pub mod slot;
+pub mod address_device;
 
 /// A TRB on the [`CommandTrbRing`].
 ///
@@ -28,7 +31,7 @@ pub enum CommandTrb {
 
     EnableSlot(EnableSlotTrb),
     DisableSlot(DisableSlotTrb),
-    AddressDevice,
+    AddressDevice(AddressDeviceTrb),
     ConfigureEndpoint(ConfigureEndpointTrb),
     EvaluateContext,
     ResetEndpoint,
@@ -57,7 +60,7 @@ impl CommandTrb {
             CommandTrb::Link(_) => TrbType::Link,
             CommandTrb::EnableSlot(_) => TrbType::EnableSlotCommand,
             CommandTrb::DisableSlot(_) => TrbType::DisableSlotCommand,
-            CommandTrb::AddressDevice => TrbType::AddressDeviceCommand,
+            CommandTrb::AddressDevice(_) => TrbType::AddressDeviceCommand,
             CommandTrb::ConfigureEndpoint(_) => TrbType::ConfigureEndpointCommand,
             CommandTrb::EvaluateContext => TrbType::EvaluateContextCommand,
             CommandTrb::ResetEndpoint => TrbType::ResetEndpointCommand,
@@ -76,13 +79,15 @@ impl CommandTrb {
     }
 
     /// Converts the TRB to the data written to a TRB ring
-    pub fn to_parts(self, cycle: bool) -> [u32; 4] {
+    pub fn to_parts(&self, cycle: bool) -> [u32; 4] {
+        let trb_type = self.trb_type();
+
         let parts = match self {
             CommandTrb::Link(link) => link.to_parts(cycle),
             CommandTrb::EnableSlot(enable_slot) => enable_slot.to_parts(cycle),
             CommandTrb::DisableSlot(disable_slot) => disable_slot.to_parts(cycle),
-            CommandTrb::AddressDevice => todo!(),
-            CommandTrb::ConfigureEndpoint(_) => todo!(),
+            CommandTrb::AddressDevice(address_device) => address_device.to_parts(cycle),
+            CommandTrb::ConfigureEndpoint(configure_endpoint) => configure_endpoint.to_parts(cycle),
             CommandTrb::EvaluateContext => todo!(),
             CommandTrb::ResetEndpoint => todo!(),
             CommandTrb::StopEndpoint => todo!(),
@@ -107,7 +112,7 @@ impl CommandTrb {
         };
 
         debug_assert_eq!(GenericTrbFlags::from(parts[3]).cycle(), cycle);
-        debug_assert_eq!(GenericTrbFlags::from(parts[3]).trb_type(), self.trb_type());
+        debug_assert_eq!(GenericTrbFlags::from(parts[3]).trb_type(), trb_type);
 
         parts
     }
