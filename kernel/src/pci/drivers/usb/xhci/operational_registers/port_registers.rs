@@ -577,25 +577,25 @@ impl<'a> PortRegister<'a, Mutable> {
     volatile_setter!(
         PortRegister, PortRegisterFields,
         status_and_control, StatusAndControl,
-        (pub fn write_status_and_control),
+        (pub unsafe fn write_status_and_control),
         |v: &PortRegister<'a, Mutable>|!v.operational_registers.read_usb_status().host_controller_halted()
     );
     volatile_setter!(
         PortRegister, PortRegisterFields,
         power_management, PowerManagement,
-        (pub fn write_power_management),
+        (pub unsafe fn write_power_management),
         |v: &PortRegister<'a, Mutable>|!v.operational_registers.read_usb_status().host_controller_halted()
     );
     volatile_setter!(
         PortRegister, PortRegisterFields,
         link_info, PortLinkInfo,
-        (pub fn write_link_info),
+        (pub unsafe fn write_link_info),
         |v: &PortRegister<'a, Mutable>|!v.operational_registers.read_usb_status().host_controller_halted()
     );
     volatile_setter!(
         PortRegister, PortRegisterFields,
         hardware_lpm_control, PortHardwareLpmControl,
-        (pub fn write_hardware_lpm_control),
+        (pub unsafe fn write_hardware_lpm_control),
         |v: &PortRegister<'a, Mutable>|!v.operational_registers.read_usb_status().host_controller_halted()
     );
 }
