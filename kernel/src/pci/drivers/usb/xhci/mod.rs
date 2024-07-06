@@ -65,7 +65,7 @@ pub struct XhciController {
 impl XhciController {
     /// Enters the main loop of the controller. This is called by [`init`] when the controller is set up.
     /// This function sets up a [`TaskQueue`] and continually polls it.
-    /// 
+    ///
     /// [`init`]: XhciController::init
     async fn main_loop(self) -> ! {
         let s = RefCell::new(self);
@@ -74,7 +74,7 @@ impl XhciController {
 
         loop {
             futures::pending!();
-            
+
             let ticks = KERNEL_STATE.ticks();
             let tick_diff = ticks - prev_ticks;
             prev_ticks = ticks;
@@ -112,7 +112,6 @@ impl XhciController {
                 CompletionCode::Success => (),
                 error => {
                     error!("Error occurred processing TRB: {error:?}");
-                    return Some(trb);
                 }
             }
 
@@ -338,13 +337,13 @@ macro_rules! volatile_accessors {
 }
 
 /// Generates get, set, and update methods for a struct which is composed of bitfields
-/// 
+///
 /// # Parameters
 /// * `field`: The name of the field on the struct which has the methods which will be used
 /// * `field_type`: The type of `field`
 /// * `val`: The name of the value which is being get/set
 /// * `val_type`: The type of `val`
-/// * `get`, `set`, `with`: The names of the methods to get, set, and update `val`. 
+/// * `get`, `set`, `with`: The names of the methods to get, set, and update `val`.
 ///     These are used both as the names of the methods on `field`, and as the names of the generated methods.
 ///     To omit generation of one of these methods, replace the method name with `_`.
 macro_rules! update_methods {
@@ -397,4 +396,4 @@ macro_rules! update_methods {
     }
 }
 
-use {volatile_accessors, volatile_getter, volatile_setter, update_methods};
+use {update_methods, volatile_accessors, volatile_getter, volatile_setter};
