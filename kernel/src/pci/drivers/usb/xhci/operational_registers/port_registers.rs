@@ -8,9 +8,9 @@ use core::fmt::Debug;
 use core::marker::PhantomData;
 
 use crate::println;
-use crate::util::generic_mutability::{Immutable, Mutability, Mutable, Pointer};
+use crate::util::generic_mutability::{Immutable, Mutability, Mutable};
 
-use super::super::{volatile_accessors, volatile_getter, volatile_setter};
+use super::super::{volatile_getter, volatile_setter};
 use super::OperationalRegisters;
 
 /// Power management and connection state of a USB port
@@ -598,6 +598,14 @@ impl<'a> PortRegister<'a, Mutable> {
         (pub unsafe fn write_hardware_lpm_control),
         |v: &PortRegister<'a, Mutable>|!v.operational_registers.read_usb_status().host_controller_halted()
     );
+
+    /// Clears all `RW1C` bits in [`status_and_control`] by reading the field and writing it with the same value
+    ///
+    /// [`status_and_control`]: PortRegisterFields::status_and_control
+    pub fn clear_status_and_control(&mut self) {
+        // SAFETY: This only clears flags, which has no effect on memory safety
+        unsafe { self.write_status_and_control(self.read_status_and_control()) };
+    }
 }
 
 impl<'a, M: PortRegisterMutability> Debug for PortRegister<'a, M> {
