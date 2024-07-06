@@ -5,7 +5,7 @@ use core::{fmt::Debug, ptr::addr_of};
 use alloc::string::String;
 use x86_64::VirtAddr;
 
-use super::{contexts::ContextSize, volatile_getter};
+use super::super::{contexts::ContextSize, volatile_getter};
 
 /// The `HCSPARAMS1` field of an [`CapabilityRegisters`] structure.
 ///
@@ -468,7 +468,9 @@ impl CapabilityParameters2 {
 #[derive(Clone, Copy)]
 struct CapabilityRegistersFields {
     /// The length of the capability registers.
-    /// The [`OperationalRegisters`][super::operational_registers::OperationalRegisters] start this number of bytes after the capability registers.
+    /// The [`OperationalRegisters`] start this number of bytes after the capability registers.
+    /// 
+    /// [`OperationalRegisters`]: super::operational::OperationalRegisters
     capability_register_length: u8,
 
     #[doc(hidden)]

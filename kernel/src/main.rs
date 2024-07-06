@@ -37,7 +37,7 @@
     unsafe_op_in_unsafe_fn,
 )]
 #![deny(clippy::undocumented_unsafe_blocks)]
-#![allow(rustdoc::private_intra_doc_links)]
+#![allow(rustdoc::private_intra_doc_links, rustdoc::private_doc_tests)]
 
 #[macro_use]
 extern crate bitfield_struct;

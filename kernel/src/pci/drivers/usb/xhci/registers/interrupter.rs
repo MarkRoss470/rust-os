@@ -2,8 +2,8 @@
 
 use x86_64::{PhysAddr, VirtAddr};
 
-use super::trb::{EventTrb, EventTrbRing};
-use super::volatile_accessors;
+use super::super::trb::{EventTrb, EventTrbRing};
+use super::super::volatile_accessors;
 
 use core::fmt::Debug;
 use core::ptr::{addr_of, addr_of_mut};
@@ -74,7 +74,6 @@ pub struct EventRingTableSizeRegister {
 /// [5.5.2.3.3.]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A435%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C412%2C0%5D
 #[bitfield(u64)]
 pub struct EventRingDequeuePointerRegister {
-    ///
     #[bits(3)]
     pub dequeue_erst_segment_index: u8,
     pub event_handler_busy: bool,

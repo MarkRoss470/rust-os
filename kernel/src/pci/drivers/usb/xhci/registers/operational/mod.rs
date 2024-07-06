@@ -7,7 +7,7 @@ use x86_64::{PhysAddr, VirtAddr};
 
 use self::port_registers::PortRegister;
 
-use super::{capability_registers::CapabilityRegisters, volatile_accessors, volatile_getter};
+use super::super::{registers::capability::CapabilityRegisters, volatile_accessors, volatile_getter};
 use crate::{print, println, util::generic_mutability::{Immutable, Mutable}};
 
 /// The behaviour of when the controller is allowed to stop incrementing MFINDEX.

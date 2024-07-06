@@ -15,27 +15,20 @@ use tasks::TaskQueue;
 use x86_64::PhysAddr;
 
 use self::{
-    capability_registers::CapabilityRegisters,
-    dcbaa::DeviceContextBaseAddressArray,
-    doorbell::DoorbellRegisters,
-    interrupter::Interrupter,
-    operational_registers::OperationalRegisters,
-    runtime_registers::RuntimeRegisters,
+    registers::{
+        capability::CapabilityRegisters, dcbaa::DeviceContextBaseAddressArray,
+        doorbell::DoorbellRegisters, interrupter::Interrupter, operational::OperationalRegisters,
+        runtime::RuntimeRegisters,
+    },
     trb::{
         event::command_completion::CompletionCode, CommandTrb, CommandTrbRing, EventTrb,
         RingFullError,
     },
 };
 
-mod capability_registers;
 mod contexts;
-mod dcbaa;
-mod doorbell;
 mod init;
-mod interrupter;
-mod operational_registers;
-mod runtime_registers;
-mod scratchpad;
+mod registers;
 mod tasks;
 mod trb;
 

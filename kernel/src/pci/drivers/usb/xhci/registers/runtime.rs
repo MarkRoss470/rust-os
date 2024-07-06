@@ -4,7 +4,7 @@ use core::fmt::Debug;
 
 use x86_64::VirtAddr;
 
-use super::interrupter::InterrupterRegisterSet;
+use super::super::registers::interrupter::InterrupterRegisterSet;
 
 /// The runtime registers of an XHCI controller
 pub struct RuntimeRegisters(*mut ());
@@ -24,7 +24,7 @@ impl RuntimeRegisters {
     /// Gets the value of the _Microframe Index Register_.
     /// This register is updated every microframe (125 microseconds), while [`enabled`] is `true`.
     ///
-    /// [`enabled`]: super::operational_registers::UsbCommand::enabled
+    /// [`enabled`]: super::operational::UsbCommand::enabled
     #[allow(clippy::cast_possible_truncation)]
     pub fn microframe_index(&self) -> u16 {
         // SAFETY: The first 32 bit register in runtime registers is the MFINDEX register

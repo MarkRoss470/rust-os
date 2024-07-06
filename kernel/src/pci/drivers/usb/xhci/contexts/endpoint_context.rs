@@ -330,7 +330,7 @@ impl EndpointContext {
     /// Gets the [`mult`] field. `large_esit_payload` is the value of the controller's [`supports_large_esit_payload`] field.
     ///
     /// [`mult`]: EndpointContextDword0::mult
-    /// [`supports_large_esit_payload`]: super::super::capability_registers::CapabilityParameters2::supports_large_esit_payload
+    /// [`supports_large_esit_payload`]: super::super::registers::capability::CapabilityParameters2::supports_large_esit_payload
     pub fn mult(&self, large_esit_payload: bool) -> u32 {
         if large_esit_payload {
             self.max_esit_payload()
@@ -381,7 +381,7 @@ impl EndpointContext {
     /// Refer to the spec section [4.14.2] for the definition of an “ESIT” and more information related to setting the value of Max ESIT Payload.
     /// For periodic endpoints, the Max ESIT Payload is used by the xHC to reserve the bus transfer time for the endpoint in its Pipe Schedule.
     ///
-    /// [`supports_large_esit_payload`]: super::super::capability_registers::CapabilityParameters2::supports_large_esit_payload
+    /// [`supports_large_esit_payload`]: super::super::registers::capability::CapabilityParameters2::supports_large_esit_payload
     /// [4.14.2]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A265%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C354%2C0%5D
     pub fn max_esit_payload(&self) -> u32 {
         (self
@@ -396,7 +396,7 @@ impl EndpointContext {
     /// Sets the [`mult`] field. `large_esit_payload` is the value of the controller's [`supports_large_esit_payload`] field.
     ///
     /// [`mult`]: EndpointContextDword0::mult
-    /// [`supports_large_esit_payload`]: super::super::capability_registers::CapabilityParameters2::supports_large_esit_payload
+    /// [`supports_large_esit_payload`]: super::super::registers::capability::CapabilityParameters2::supports_large_esit_payload
     pub fn set_mult(&mut self, large_esit_payload: bool, mult: u32) {
         if large_esit_payload {
             todo!("Setting mult with large ESIT payload");
@@ -411,7 +411,7 @@ impl EndpointContext {
     /// Updates the [`mult`] field. `large_esit_payload` is the value of the controller's [`supports_large_esit_payload`] field.
     ///
     /// [`mult`]: EndpointContextDword0::mult
-    /// [`supports_large_esit_payload`]: super::super::capability_registers::CapabilityParameters2::supports_large_esit_payload
+    /// [`supports_large_esit_payload`]: super::super::registers::capability::CapabilityParameters2::supports_large_esit_payload
     pub fn with_mult(mut self, large_esit_payload: bool, mult: u32) -> Self {
         self.set_mult(large_esit_payload, mult);
         self

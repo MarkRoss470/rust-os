@@ -9,7 +9,7 @@ pub mod slot_context;
 ///
 /// This is dependant on the [`context_size`] field of the controller's capability registers.
 /// 
-/// [`context_size`]: super::capability_registers::CapabilityParameters1::context_size
+/// [`context_size`]: super::registers::capability::CapabilityParameters1::context_size
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContextSize {
     /// A context struct takes 32 bytes

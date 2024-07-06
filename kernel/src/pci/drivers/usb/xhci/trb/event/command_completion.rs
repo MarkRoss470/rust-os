@@ -83,7 +83,7 @@ pub enum CompletionError {
     ///
     /// See the spec section [4.6.3] for more information.
     ///
-    /// [`max_device_slots`]: super::super::super::capability_registers::StructuralParameters1::max_device_slots
+    /// [`max_device_slots`]: super::super::super::registers::capability::StructuralParameters1::max_device_slots
     /// [4.6.3]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A114%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C224%2C0%5D
     NoSlotsAvailable,
     /// Asserted if an invalid Stream Context Type (SCT) value is detected.

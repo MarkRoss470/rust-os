@@ -164,7 +164,7 @@ pub enum SlotState {
     ///
     /// [`EnableSlot`]: super::super::trb::command::CommandTrb::EnableSlot
     /// [`OwnedDeviceContext`]: super::device_context::OwnedDeviceContext
-    /// [`DeviceContextBaseAddressArray`]: super::super::dcbaa::DeviceContextBaseAddressArray
+    /// [`DeviceContextBaseAddressArray`]: super::super::registers::dcbaa::DeviceContextBaseAddressArray
     ///
     /// [`AddressDevice`]: super::super::trb::command::CommandTrb::AddressDevice
     /// [`DisableSlot`]: super::super::trb::command::CommandTrb::DisableSlot
@@ -185,7 +185,7 @@ pub enum SlotState {
     /// See the spec section [4.5.3.4] for more info.
     ///
     /// [`OwnedDeviceContext`]: super::device_context::OwnedDeviceContext
-    /// [`DeviceContextBaseAddressArray`]: super::super::dcbaa::DeviceContextBaseAddressArray
+    /// [`DeviceContextBaseAddressArray`]: super::super::registers::dcbaa::DeviceContextBaseAddressArray
     /// [`EndpointContext`]: super::endpoint_context::EndpointContext
     ///
     /// [`AddressDevice`]: super::super::trb::command::CommandTrb::AddressDevice
@@ -211,7 +211,7 @@ pub enum SlotState {
     /// See the spec section [4.5.3.5] for more info.
     ///
     /// [`OwnedDeviceContext`]: super::device_context::OwnedDeviceContext
-    /// [`DeviceContextBaseAddressArray`]: super::super::dcbaa::DeviceContextBaseAddressArray
+    /// [`DeviceContextBaseAddressArray`]: super::super::registers::dcbaa::DeviceContextBaseAddressArray
     /// [`EndpointContext`]: super::endpoint_context::EndpointContext
     ///
     /// [`EvaluateContext`]: super::super::trb::command::CommandTrb::EvaluateContext
@@ -241,7 +241,7 @@ pub enum SlotState {
     /// See the spec section [4.5.3.6] for more info.
     ///
     /// [`OwnedDeviceContext`]: super::device_context::OwnedDeviceContext
-    /// [`DeviceContextBaseAddressArray`]: super::super::dcbaa::DeviceContextBaseAddressArray
+    /// [`DeviceContextBaseAddressArray`]: super::super::registers::dcbaa::DeviceContextBaseAddressArray
     /// [`EndpointContext`]: super::endpoint_context::EndpointContext
     ///
     /// [`ResetEndpoint`]: super::super::trb::command::CommandTrb::ResetEndpoint

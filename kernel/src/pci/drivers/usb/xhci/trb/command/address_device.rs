@@ -37,11 +37,10 @@ pub struct AddressDeviceTrb {
     /// The pointer to the [`InputContext`] to use
     ///
     /// [`InputContext`]: super::super::super::contexts::input_context::InputContext
-    /// [Device Context]: super::super::super::contexts::device_context::DeviceContextRef
     pub input_context_pointer: PhysAddr,
     /// The index into the [`DeviceContextBaseAddressArray`] of the [device context] to use
     /// 
-    /// [`DeviceContextBaseAddressArray`]: super::super::super::dcbaa::DeviceContextBaseAddressArray
+    /// [`DeviceContextBaseAddressArray`]: super::super::super::registers::dcbaa::DeviceContextBaseAddressArray
     /// [device context]: super::super::super::contexts::device_context::DeviceContextRef
     pub slot_id: u8,
     /// Whether to inhibit the controller from sending a USB `SET_ADDRESS` request

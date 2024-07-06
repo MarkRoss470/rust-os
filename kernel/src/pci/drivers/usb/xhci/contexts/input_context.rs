@@ -6,7 +6,7 @@ use x86_64::PhysAddr;
 
 use crate::{
     allocator::PageBox,
-    pci::drivers::usb::xhci::operational_registers::SupportedPageSize,
+    pci::drivers::usb::xhci::registers::operational::SupportedPageSize,
     util::generic_mutability::{Immutable, Mutability, Mutable},
 };
 
@@ -37,10 +37,10 @@ impl InputContext {
     /// * `context_size` the size of context structures.
     ///    This can be obtained using the [`context_size`] method on the controller's [`CapabilityParameters1`]
     ///
-    /// [`read_page_size`]: super::super::operational_registers::OperationalRegisters::read_page_size
-    /// [`OperationalRegisters`]: super::super::operational_registers::OperationalRegisters
-    /// [`context_size`]: super::super::capability_registers::CapabilityParameters1::context_size
-    /// [`CapabilityParameters1`]: super::super::capability_registers::CapabilityParameters1
+    /// [`read_page_size`]: super::super::registers::operational::OperationalRegisters::read_page_size
+    /// [`OperationalRegisters`]: super::super::registers::operational::OperationalRegisters
+    /// [`context_size`]: super::super::registers::capability::CapabilityParameters1::context_size
+    /// [`CapabilityParameters1`]: super::super::registers::capability::CapabilityParameters1
     pub fn new_zeroed(page_size: SupportedPageSize, context_size: ContextSize) -> Self {
         if page_size.page_size() != 0x1000 {
             todo!("Non-4k pages");
@@ -127,8 +127,8 @@ struct InputControlContextFields {
     /// then this field is the `bConfigurationValue` field of the Configuration Descriptor (TODO: links) associated with the TRB.
     ///
     /// [`ConfigureEndpointTrb`]: super::super::trb::command::configure_endpoint::ConfigureEndpointTrb
-    /// [extended Configuration Information]: super::super::capability_registers::CapabilityParameters2::supports_extended_configuration_information
-    /// [extended input context control fields are enabled]: super::super::operational_registers::ConfigureRegister::config_info_enable
+    /// [extended Configuration Information]: super::super::registers::capability::CapabilityParameters2::supports_extended_configuration_information
+    /// [extended input context control fields are enabled]: super::super::registers::operational::ConfigureRegister::config_info_enable
     configuration_value: u8,
     /// If the controller supports [extended Configuration Information] and
     /// [extended input context control fields are enabled], and this input context is associated with a
@@ -136,8 +136,8 @@ struct InputControlContextFields {
     /// then this field is the `bInterfaceNumber` field of the Configuration Descriptor (TODO: links) associated with the TRB.
     ///
     /// [`ConfigureEndpointTrb`]: super::super::trb::command::configure_endpoint::ConfigureEndpointTrb
-    /// [extended Configuration Information]: super::super::capability_registers::CapabilityParameters2::supports_extended_configuration_information
-    /// [extended input context control fields are enabled]: super::super::operational_registers::ConfigureRegister::config_info_enable
+    /// [extended Configuration Information]: super::super::registers::capability::CapabilityParameters2::supports_extended_configuration_information
+    /// [extended input context control fields are enabled]: super::super::registers::operational::ConfigureRegister::config_info_enable
     interface_number: u8,
     /// If the controller supports [extended Configuration Information] and
     /// [extended input context control fields are enabled], and this input context is associated with a
@@ -145,8 +145,8 @@ struct InputControlContextFields {
     /// then this field is the `bAlternateSetting` field of the Configuration Descriptor (TODO: links) associated with the TRB.
     ///
     /// [`ConfigureEndpointTrb`]: super::super::trb::command::configure_endpoint::ConfigureEndpointTrb
-    /// [extended Configuration Information]: super::super::capability_registers::CapabilityParameters2::supports_extended_configuration_information
-    /// [extended input context control fields are enabled]: super::super::operational_registers::ConfigureRegister::config_info_enable
+    /// [extended Configuration Information]: super::super::registers::capability::CapabilityParameters2::supports_extended_configuration_information
+    /// [extended input context control fields are enabled]: super::super::registers::operational::ConfigureRegister::config_info_enable
     alternate_setting: u8,
 
     #[doc(hidden)]

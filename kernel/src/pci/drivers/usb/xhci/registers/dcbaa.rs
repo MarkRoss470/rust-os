@@ -8,12 +8,14 @@ use x86_64::PhysAddr;
 
 use crate::allocator::PageBox;
 
-use super::{
-    capability_registers::CapabilityRegisters,
+use super::super::{
     contexts::{device_context::OwnedDeviceContext, ContextSize},
-    operational_registers::{OperationalRegisters, SupportedPageSize},
-    scratchpad::ScratchpadBufferArray,
+    registers::{
+        capability::CapabilityRegisters,
+        operational::{OperationalRegisters, SupportedPageSize},
+    },
 };
+use super::scratchpad::ScratchpadBufferArray;
 
 /// The _Device Context Base Address Array_ (DCBAA) data structure is used to
 /// associate an xHCI _Device Slot_ with its respective [`OwnedDeviceContext`] data structure.
@@ -40,7 +42,7 @@ pub struct DeviceContextBaseAddressArray {
 
 impl DeviceContextBaseAddressArray {
     /// Allocates a new DCBAA using the values in the given registers.
-    /// 
+    ///
     /// # Safety
     /// * The given `capability` and `operational` registers must be valid registers from the same controller.
     pub unsafe fn from_registers(
@@ -54,9 +56,7 @@ impl DeviceContextBaseAddressArray {
 
         let page_size = operational.read_page_size();
 
-        let context_size = capability
-            .capability_parameters_1()
-            .context_size();
+        let context_size = capability.capability_parameters_1().context_size();
 
         let max_scratchpad_buffers = capability
             .structural_parameters_2()
@@ -76,9 +76,9 @@ impl DeviceContextBaseAddressArray {
     /// * `context_size` must be the value of the controller's [`context_size`] register
     /// * `max_scratchpad_buffers` must be the value of the controller's [`max_scratchpad_buffers`] register
     ///
-    /// [the controller's `page_size` register]: super::operational_registers::OperationalRegisters::read_page_size
-    /// [`context_size`]: super::capability_registers::CapabilityParameters1::context_size
-    /// [`max_scratchpad_buffers`]: super::capability_registers::StructuralParameters2::max_scratchpad_buffers
+    /// [the controller's `page_size` register]: super::operational::OperationalRegisters::read_page_size
+    /// [`context_size`]: super::capability::CapabilityParameters1::context_size
+    /// [`max_scratchpad_buffers`]: super::capability::StructuralParameters2::max_scratchpad_buffers
     pub unsafe fn new(
         len: usize,
         page_size: SupportedPageSize,
@@ -142,7 +142,7 @@ impl DeviceContextBaseAddressArray {
     /// # Panics
     /// * If `address` isn't `page_size` aligned
     ///
-    /// [the controller's `page_size` register]: super::operational_registers::OperationalRegisters::read_page_size
+    /// [the controller's `page_size` register]: super::operational::OperationalRegisters::read_page_size
     pub unsafe fn write_scratchpad_buffer_array(
         &mut self,
         address: PhysAddr,

@@ -5,7 +5,7 @@ use core::{fmt::Debug, marker::PhantomData};
 use x86_64::PhysAddr;
 
 use super::{
-    super::operational_registers::SupportedPageSize, endpoint_context::EndpointContext,
+    super::registers::operational::SupportedPageSize, endpoint_context::EndpointContext,
     slot_context::SlotContext, ContextSize,
 };
 use crate::{
@@ -19,7 +19,7 @@ use crate::{
 /// A [device context] in the [`DeviceContextBaseAddressArray`]. This is an _Output Device Context_.
 ///
 /// [device context]: DeviceContextRef
-/// [`DeviceContextBaseAddressArray`]: super::super::dcbaa::DeviceContextBaseAddressArray
+/// [`DeviceContextBaseAddressArray`]: super::super::registers::dcbaa::DeviceContextBaseAddressArray
 pub struct OwnedDeviceContext {
     /// The page where the data structure is in memory
     page: PageBox,
@@ -42,10 +42,10 @@ impl OwnedDeviceContext {
     /// * `context_size` is the size of context structures.
     ///    This can be obtained using the [`context_size`] method on the controller's [`CapabilityParameters1`]
     ///
-    /// [`read_page_size`]: super::super::operational_registers::OperationalRegisters::read_page_size
-    /// [`OperationalRegisters`]: super::super::operational_registers::OperationalRegisters
-    /// [`context_size`]: super::super::capability_registers::CapabilityParameters1::context_size
-    /// [`CapabilityParameters1`]: super::super::capability_registers::CapabilityParameters1
+    /// [`read_page_size`]: super::super::registers::operational::OperationalRegisters::read_page_size
+    /// [`OperationalRegisters`]: super::super::registers::operational::OperationalRegisters
+    /// [`context_size`]: super::super::registers::capability::CapabilityParameters1::context_size
+    /// [`CapabilityParameters1`]: super::super::registers::capability::CapabilityParameters1
     pub fn new(page_size: SupportedPageSize, context_size: ContextSize) -> Self {
         if page_size.page_size() != 0x1000 {
             todo!("Non-4k pages");
@@ -82,7 +82,7 @@ impl OwnedDeviceContext {
 ///
 /// [`InputContext`]: super::input_context::InputContext
 /// [_Output Device Contexts_]: OwnedDeviceContext
-/// [`DeviceContextBaseAddressArray`]: super::super::dcbaa::DeviceContextBaseAddressArray
+/// [`DeviceContextBaseAddressArray`]: super::super::registers::dcbaa::DeviceContextBaseAddressArray
 /// [6.2.1]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A449%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C361%2C0%5D
 pub struct DeviceContextRef<'a, M: Mutability> {
     /// The pointer where the device context is
@@ -101,7 +101,7 @@ impl<'a, M: Mutability> DeviceContextRef<'a, M> {
     ///     for the whole lifetime `'a` (if `M` is `Mutable`, it must also be valid for writes).
     /// * `context_size` must be accurate to the controller's [`context_size`] value.
     ///
-    /// [`context_size`]: super::super::capability_registers::CapabilityParameters1::context_size
+    /// [`context_size`]: super::super::registers::capability::CapabilityParameters1::context_size
     pub unsafe fn new(ptr: M::Ptr<()>, context_size: ContextSize) -> Self {
         Self {
             ptr,

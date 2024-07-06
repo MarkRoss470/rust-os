@@ -86,7 +86,7 @@ pub struct DisableSlotTrb {
 impl DisableSlotTrb {
     /// Converts the TRB to the data written to a TRB ring
     pub fn to_parts(self, cycle: bool) -> [u32; 4] {
-        // The first 3 qwords are all rsvdz, so just return 0s for them.
+        // The first 3 dwords are all rsvdz, so just return 0s for them.
         [0, 0, 0, self.with_cycle(cycle).into()]
     }
 }

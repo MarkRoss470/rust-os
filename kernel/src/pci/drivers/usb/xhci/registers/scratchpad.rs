@@ -5,7 +5,7 @@ use x86_64::PhysAddr;
 
 use crate::allocator::PageBox;
 
-use super::operational_registers::SupportedPageSize;
+use super::operational::SupportedPageSize;
 
 /// The _Scratchpad Buffer Array_ data structure, defined in the spec section [6.6].
 ///
@@ -29,7 +29,7 @@ impl ScratchpadBufferArray {
     /// # Safety
     /// * `page_size` must be the value of [the controller's `page_size` register]
     ///
-    /// [the controller's `page_size` register]: super::operational_registers::OperationalRegisters::read_page_size
+    /// [the controller's `page_size` register]: super::operational::OperationalRegisters::read_page_size
     pub unsafe fn new(len: usize, page_size: SupportedPageSize) -> Self {
         if page_size.page_size() != 0x1000 {
             todo!("Non-4k pages");

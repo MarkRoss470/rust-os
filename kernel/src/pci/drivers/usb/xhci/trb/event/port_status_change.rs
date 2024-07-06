@@ -19,7 +19,7 @@ struct Dword3 {
 }
 
 #[allow(unused)] // For docs
-use super::super::super::operational_registers::port_registers::{
+use super::super::super::registers::operational::port_registers::{
     PortRegisterFields, StatusAndControl,
 };
 use super::command_completion::CompletionCode;

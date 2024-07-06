@@ -10,7 +10,7 @@ use core::marker::PhantomData;
 use crate::println;
 use crate::util::generic_mutability::{Immutable, Mutability, Mutable};
 
-use super::super::{volatile_getter, volatile_setter};
+use super::super::super::{volatile_getter, volatile_setter};
 use super::OperationalRegisters;
 
 /// Power management and connection state of a USB port

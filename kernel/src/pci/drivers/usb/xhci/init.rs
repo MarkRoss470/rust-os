@@ -17,17 +17,17 @@ use log::debug;
 use x86_64::VirtAddr;
 
 use super::{
-    capability_registers::CapabilityRegisters,
-    dcbaa::DeviceContextBaseAddressArray,
-    doorbell::DoorbellRegisters,
-    interrupter::Interrupter,
-    operational_registers::{
-        CommandRingControl, DeviceContextBaseAddressArrayPointer, OperationalRegisters,
+    registers::{
+        capability::CapabilityRegisters,
+        dcbaa::DeviceContextBaseAddressArray,
+        doorbell::DoorbellRegisters,
+        interrupter::Interrupter,
+        operational::{
+            CommandRingControl, DeviceContextBaseAddressArrayPointer, OperationalRegisters,
+        },
+        runtime::RuntimeRegisters,
     },
-    runtime_registers::RuntimeRegisters,
-    trb::{
-        CommandTrb, event::command_completion::CompletionCode, CommandTrbRing, EventTrb,
-    },
+    trb::{event::command_completion::CompletionCode, CommandTrb, CommandTrbRing, EventTrb},
 };
 
 impl XhciController {
@@ -345,7 +345,7 @@ unsafe fn find_registers(
 /// This function will completely reset the controller, so the caller needs to ensure no code
 /// is relying on the state of the controller being preserved.
 ///
-/// [`UsbCommand::reset`]: super::operational_registers::UsbCommand::reset
+/// [`UsbCommand::reset`]: super::registers::operational::UsbCommand::reset
 async unsafe fn reset_and_wait(operational_registers: &mut OperationalRegisters) {
     let mut usb_command = operational_registers.read_usb_command();
     usb_command.set_reset(true);
@@ -364,8 +364,8 @@ async unsafe fn reset_and_wait(operational_registers: &mut OperationalRegisters)
 
 /// Sets the value of [`max_device_slots_enabled`] to [`max_ports`].
 ///
-/// [`max_device_slots_enabled`]: super::operational_registers::ConfigureRegister::max_device_slots_enabled
-/// [`max_ports`]: super::capability_registers::StructuralParameters1::max_ports
+/// [`max_device_slots_enabled`]: super::registers::operational::ConfigureRegister::max_device_slots_enabled
+/// [`max_ports`]: super::registers::capability::StructuralParameters1::max_ports
 fn enable_all_ports(
     capability_registers: &CapabilityRegisters,
     operational_registers: &mut OperationalRegisters,

@@ -108,7 +108,7 @@ impl DoorbellRegisters {
     /// * `max_device_slots` must be the value of the controller's [`max_device_slots`] field
     /// * There must not be an existing [`DoorbellRegisters`] struct for this controller
     ///
-    /// [`max_device_slots`]: super::capability_registers::StructuralParameters1::max_device_slots
+    /// [`max_device_slots`]: super::capability::StructuralParameters1::max_device_slots
     pub unsafe fn new(ptr: VirtAddr, max_device_slots: usize) -> Self {
         assert!(max_device_slots > 1);
 
