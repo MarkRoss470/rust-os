@@ -17,7 +17,7 @@ mod software_driven_rings;
 pub use command::CommandTrb;
 pub use event::EventTrb;
 pub use event_ring::EventTrbRing;
-pub use software_driven_rings::CommandTrbRing;
+pub use software_driven_rings::{CommandTrbRing, TransferTrbRing};
 
 /// A type of TRB. Taken from [this table].
 ///
@@ -185,7 +185,7 @@ struct GenericTrbFlags {
 }
 
 /// An error indicating that a TRB ring is full
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RingFullError;
 
 /// A TRB on a transfer TRB ring (TODO: link).
