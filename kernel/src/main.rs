@@ -59,12 +59,12 @@ mod devices;
 mod global_state;
 mod graphics;
 mod init;
-pub mod input;
+mod input;
 mod log;
 mod panic;
 mod pci;
 mod scheduler;
-pub mod util;
+mod util;
 
 #[cfg(test)]
 mod tests;

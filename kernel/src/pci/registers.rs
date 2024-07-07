@@ -1,5 +1,7 @@
 //! Types for reading values from PCI registers
 
+use crate::util::bitfield_enum::bitfield_enum;
+
 use super::{
     bar::Bar,
     classcodes::{ClassCode, InvalidValueError},
@@ -39,34 +41,22 @@ impl core::fmt::Display for PciDeviceId {
     }
 }
 
-/// The timing values for the [`devsel_timing`][StatusRegister::devsel_timing] method
-#[repr(u16)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum DEVSELTiming {
-    /// Device asserts `DEVSEL#` after 1 clock cycle
-    Fast = 0,
-    /// Device asserts `DEVSEL#` after 2 clock cycles
-    Medium = 1,
-    /// Device asserts `DEVSEL#` after 3 clock cycles
-    Slow = 2,
-}
-
-impl DEVSELTiming {
-    /// Converts the [`DEVSELTiming`] into bits. Needed for the inclusion of the enum in [`StatusRegister`]
-    const fn into_bits(self) -> u16 {
-        self as _
+bitfield_enum!(
+    #[bitfield_enum(u16)]
+    /// The timing values for the [`devsel_timing`][StatusRegister::devsel_timing] method
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    pub enum DEVSELTiming {
+        #[value(0)]
+        /// Device asserts `DEVSEL#` after 1 clock cycle
+        Fast,
+        #[value(1)]
+        /// Device asserts `DEVSEL#` after 2 clock cycles
+        Medium,
+        #[value(2)]
+        /// Device asserts `DEVSEL#` after 3 clock cycles
+        Slow,
     }
-
-    /// Constructs a [`DEVSELTiming`] from bits. Needed for the inclusion of the enum in [`StatusRegister`]
-    const fn from_bits(value: u16) -> Self {
-        match value {
-            0 => Self::Fast,
-            1 => Self::Medium,
-            2 => Self::Slow,
-            _ => panic!("Invalid DEVSEL timing value"),
-        }
-    }
-}
+);
 
 /// The value of the status register of a PCI device.
 /// This register just contains flags about the device's capabilities and what errors have occurred.

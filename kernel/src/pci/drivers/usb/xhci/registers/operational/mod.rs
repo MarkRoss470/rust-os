@@ -7,43 +7,38 @@ use x86_64::{PhysAddr, VirtAddr};
 
 use self::port_registers::PortRegister;
 
-use super::super::{registers::capability::CapabilityRegisters, volatile_accessors, volatile_getter};
-use crate::{print, println, util::generic_mutability::{Immutable, Mutable}};
+use super::super::{
+    registers::capability::CapabilityRegisters, volatile_accessors, volatile_getter,
+};
+use crate::{
+    print, println,
+    util::{
+        bitfield_enum::bitfield_enum,
+        generic_mutability::{Immutable, Mutable},
+    },
+};
 
-/// The behaviour of when the controller is allowed to stop incrementing MFINDEX.
-/// Regardless of this setting, the controller may always stop incrementing if all root hub ports are in the
-/// Disconnected, Disabled, or Powered-Off states.
-///
-/// See the spec section [4.12.2] for more info.
-///
-/// [4.12.2]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A253%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C694%2C0%5D
-#[derive(Debug)]
-pub enum MfindexStopBehaviour {
-    /// The controller may stop incrementing MFINDEX if all root hub ports are in the
-    /// Training, Disconnected, Disabled, or Powered-Off states.
-    Training,
-    /// The controller may stop incrementing MFINDEX if all root hub ports are in the
-    /// U3, Disconnected, Disabled, or Powered-Off states.
-    U3,
-}
-
-impl MfindexStopBehaviour {
-    /// Constructs an [`MfindexStopBehaviour`] from its bit representation
-    const fn from_bits(value: u32) -> Self {
-        match value {
-            0 => Self::Training,
-            _ => Self::U3,
-        }
+bitfield_enum!(
+    #[bitfield_enum(u32)]
+    /// The behaviour of when the controller is allowed to stop incrementing MFINDEX.
+    /// Regardless of this setting, the controller may always stop incrementing if all root hub ports are in the
+    /// Disconnected, Disabled, or Powered-Off states.
+    ///
+    /// See the spec section [4.12.2] for more info.
+    ///
+    /// [4.12.2]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A253%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C694%2C0%5D
+    #[derive(Debug)]
+    pub enum MfindexStopBehaviour {
+        #[value(0)]
+        /// The controller may stop incrementing MFINDEX if all root hub ports are in the
+        /// Training, Disconnected, Disabled, or Powered-Off states.
+        Training,
+        #[value(1)]
+        /// The controller may stop incrementing MFINDEX if all root hub ports are in the
+        /// U3, Disconnected, Disabled, or Powered-Off states.
+        U3,
     }
-
-    /// Converts an [`MfindexStopBehaviour`] to its bit representation
-    const fn into_bits(self) -> u32 {
-        match self {
-            Self::Training => 0,
-            Self::U3 => 1,
-        }
-    }
-}
+);
 
 /// The `USBCMD` field of an [`OperationalRegisters`] structure.
 ///

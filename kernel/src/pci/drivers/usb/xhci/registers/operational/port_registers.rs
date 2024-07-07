@@ -8,6 +8,7 @@ use core::fmt::Debug;
 use core::marker::PhantomData;
 
 use crate::println;
+use crate::util::bitfield_enum::bitfield_enum;
 use crate::util::generic_mutability::{Immutable, Mutability, Mutable};
 
 use super::super::super::{volatile_getter, volatile_setter};
@@ -75,41 +76,25 @@ impl PortLinkState {
     }
 }
 
-/// The status of a port indicator light
-#[derive(Debug, Clone, Copy)]
-pub enum PortIndicatorState {
-    /// The light is off
-    Off,
-    /// The light is amber
-    Amber,
-    /// The light is green
-    Green,
-    /// The light is in an undefined state
-    Undefined,
-}
-
-impl PortIndicatorState {
-    /// Parses a [`PortIndicatorState`] from its bit representation
-    const fn from_bits(bits: u32) -> Self {
-        match bits {
-            0 => Self::Off,
-            1 => Self::Amber,
-            2 => Self::Green,
-            3 => Self::Undefined,
-            _ => unreachable!(),
-        }
+bitfield_enum!(
+    #[bitfield_enum(u32)]
+    /// The status of a port indicator light
+    #[derive(Debug, Clone, Copy)]
+    pub enum PortIndicatorState {
+        #[value(0)]
+        /// The light is off
+        Off,
+        #[value(1)]
+        /// The light is amber
+        Amber,
+        #[value(2)]
+        /// The light is green
+        Green,
+        #[value(3)]
+        /// The light is in an undefined state
+        Undefined,
     }
-
-    /// Converts a [`PortIndicatorState`] to its bit representation
-    const fn into_bits(self) -> u32 {
-        match self {
-            Self::Off => 0,
-            Self::Amber => 1,
-            Self::Green => 2,
-            Self::Undefined => 3,
-        }
-    }
-}
+);
 
 /// Information about the power and connection status of a port.
 ///

@@ -2,8 +2,8 @@
 
 use core::fmt::Debug;
 
-use crate::pci::drivers::usb::RouteString;
 use super::super::update_methods;
+use crate::{pci::drivers::usb::RouteString, util::bitfield_enum::bitfield_enum};
 
 #[bitfield(u32)]
 struct SlotContextDword0 {
@@ -143,154 +143,135 @@ struct SlotContextDword3 {
     slot_state: SlotState,
 }
 
-/// The current state of a Device Slot.
-///
-/// See the spec section [4.5.3] for the definition of this type.
-///
-/// The `Disabled` state is not part of this enum because it has the same binary representation as [`Enabled`].
-/// This enum only represents the state of an enabled _Device Slot_.
-///
-/// [4.5.3]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A104%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C219%2C0%5D
-/// [`Enabled`]: SlotState::Enabled
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SlotState {
-    /// The _Device Slot_ has been allocated to software by the [`EnableSlot`] Command,
-    /// however the Doorbell register for the slot is not enabled and the pointer to the slot’s
-    /// Output [`OwnedDeviceContext`] in the [`DeviceContextBaseAddressArray`] is invalid.
+bitfield_enum!(
+    #[bitfield_enum(u32)]
+    /// The current state of a Device Slot.
     ///
-    /// The only commands that software is allowed to issue for a slot in this state are [`AddressDevice`] and [`DisableSlot`].
+    /// See the spec section [4.5.3] for the definition of this type.
     ///
-    /// See the spec section [4.5.3.3] for more info.
+    /// The `Disabled` state is not part of this enum because it has the same binary representation as [`Enabled`].
+    /// This enum only represents the state of an enabled _Device Slot_.
     ///
-    /// [`EnableSlot`]: super::super::trb::command::CommandTrb::EnableSlot
-    /// [`OwnedDeviceContext`]: super::device_context::OwnedDeviceContext
-    /// [`DeviceContextBaseAddressArray`]: super::super::registers::dcbaa::DeviceContextBaseAddressArray
-    ///
-    /// [`AddressDevice`]: super::super::trb::command::CommandTrb::AddressDevice
-    /// [`DisableSlot`]: super::super::trb::command::CommandTrb::DisableSlot
-    ///
-    /// [4.5.3.3]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A106%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C219%2C0%5D
-    Enabled,
+    /// [4.5.3]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A104%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C219%2C0%5D
+    /// [`Enabled`]: SlotState::Enabled
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum SlotState {
+        #[value(0)]
+        /// The _Device Slot_ has been allocated to software by the [`EnableSlot`] Command,
+        /// however the Doorbell register for the slot is not enabled and the pointer to the slot’s
+        /// Output [`OwnedDeviceContext`] in the [`DeviceContextBaseAddressArray`] is invalid.
+        ///
+        /// The only commands that software is allowed to issue for a slot in this state are [`AddressDevice`] and [`DisableSlot`].
+        ///
+        /// See the spec section [4.5.3.3] for more info.
+        ///
+        /// [`EnableSlot`]: super::super::trb::command::CommandTrb::EnableSlot
+        /// [`OwnedDeviceContext`]: super::device_context::OwnedDeviceContext
+        /// [`DeviceContextBaseAddressArray`]: super::super::dcbaa::DeviceContextBaseAddressArray
+        ///
+        /// [`AddressDevice`]: super::super::trb::command::CommandTrb::AddressDevice
+        /// [`DisableSlot`]: super::super::trb::command::CommandTrb::DisableSlot
+        ///
+        /// [4.5.3.3]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A106%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C219%2C0%5D
+        Enabled,
 
-    /// The USB device is in the `Default` state, the pointer to the _Device Slot’s_
-    /// Output [`OwnedDeviceContext`] in the [`DeviceContextBaseAddressArray`] is valid,
-    /// the [`SlotContext`] and [`EndpointContext`] 0 in the Output Device Context have
-    /// been initialized by the xHC, and the Doorbell register for the slot is enabled only
-    /// for `DB Target = Control EP 0 Enqueue Pointer Update`.
-    ///
-    /// The only commands that software is allowed to issue for the slot in this state are the [`AddressDevice`] (BSR = 0),
-    /// [`ResetEndpoint`], [`StopEndpoint`], [`EvaluateContext`], [`SetTRDequeuePointer`],
-    /// and [`DisableSlot`].
-    ///
-    /// See the spec section [4.5.3.4] for more info.
-    ///
-    /// [`OwnedDeviceContext`]: super::device_context::OwnedDeviceContext
-    /// [`DeviceContextBaseAddressArray`]: super::super::registers::dcbaa::DeviceContextBaseAddressArray
-    /// [`EndpointContext`]: super::endpoint_context::EndpointContext
-    ///
-    /// [`AddressDevice`]: super::super::trb::command::CommandTrb::AddressDevice
-    /// [`ResetEndpoint`]: super::super::trb::command::CommandTrb::ResetEndpoint
-    /// [`StopEndpoint`]: super::super::trb::command::CommandTrb::StopEndpoint
-    /// [`EvaluateContext`]: super::super::trb::command::CommandTrb::EvaluateContext
-    /// [`SetTRDequeuePointer`]: super::super::trb::command::CommandTrb::SetTRDequeuePointer
-    /// [`DisableSlot`]: super::super::trb::command::CommandTrb::DisableSlot
-    ///
-    /// [4.5.3.4]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A107%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C377%2C0%5D
-    Default,
+        #[value(1)]
+        /// The USB device is in the `Default` state, the pointer to the _Device Slot’s_
+        /// Output [`OwnedDeviceContext`] in the [`DeviceContextBaseAddressArray`] is valid,
+        /// the [`SlotContext`] and [`EndpointContext`] 0 in the Output Device Context have
+        /// been initialized by the xHC, and the Doorbell register for the slot is enabled only
+        /// for `DB Target = Control EP 0 Enqueue Pointer Update`.
+        ///
+        /// The only commands that software is allowed to issue for the slot in this state are the [`AddressDevice`] (BSR = 0),
+        /// [`ResetEndpoint`], [`StopEndpoint`], [`EvaluateContext`], [`SetTRDequeuePointer`],
+        /// and [`DisableSlot`].
+        ///
+        /// See the spec section [4.5.3.4] for more info.
+        ///
+        /// [`OwnedDeviceContext`]: super::device_context::OwnedDeviceContext
+        /// [`DeviceContextBaseAddressArray`]: super::super::dcbaa::DeviceContextBaseAddressArray
+        /// [`EndpointContext`]: super::endpoint_context::EndpointContext
+        ///
+        /// [`AddressDevice`]: super::super::trb::command::CommandTrb::AddressDevice
+        /// [`ResetEndpoint`]: super::super::trb::command::CommandTrb::ResetEndpoint
+        /// [`StopEndpoint`]: super::super::trb::command::CommandTrb::StopEndpoint
+        /// [`EvaluateContext`]: super::super::trb::command::CommandTrb::EvaluateContext
+        /// [`SetTRDequeuePointer`]: super::super::trb::command::CommandTrb::SetTRDequeuePointer
+        /// [`DisableSlot`]: super::super::trb::command::CommandTrb::DisableSlot
+        ///
+        /// [4.5.3.4]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A107%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C377%2C0%5D
+        Default,
 
-    /// The USB device is in the `Address` state, the pointer to the _Device Slot’s_
-    /// Output [`OwnedDeviceContext`] in the [`DeviceContextBaseAddressArray`] is valid,
-    /// the [`SlotContext`] and [`EndpointContext`] 0 in the Output Device Context have
-    /// been initialized by the xHC, and the Doorbell register for the slot is enabled only
-    /// for `DB Target = Control EP 0 Enqueue Pointer Update`.
-    ///
-    /// The only commands that software is allowed to issue for the slot in this state are the [`EvaluateContext`],
-    /// [`ConfigureEndpoint`], [`ResetEndpoint`], [`StopEndpoint`], [`NegotiateBandwidth`],
-    /// [`SetTRDequeuePointer`], [`ResetDevice`], and [`DisableSlot`].
-    ///
-    /// See the spec section [4.5.3.5] for more info.
-    ///
-    /// [`OwnedDeviceContext`]: super::device_context::OwnedDeviceContext
-    /// [`DeviceContextBaseAddressArray`]: super::super::registers::dcbaa::DeviceContextBaseAddressArray
-    /// [`EndpointContext`]: super::endpoint_context::EndpointContext
-    ///
-    /// [`EvaluateContext`]: super::super::trb::command::CommandTrb::EvaluateContext
-    /// [`ConfigureEndpoint`]: super::super::trb::command::CommandTrb::ConfigureEndpoint
-    /// [`ResetEndpoint`]: super::super::trb::command::CommandTrb::ResetEndpoint
-    /// [`StopEndpoint`]: super::super::trb::command::CommandTrb::StopEndpoint
-    /// [`NegotiateBandwidth`]: super::super::trb::command::CommandTrb::NegotiateBandwidth
-    /// [`SetTRDequeuePointer`]: super::super::trb::command::CommandTrb::SetTRDequeuePointer
-    /// [`ResetDevice`]: super::super::trb::command::CommandTrb::ResetDevice
-    /// [`DisableSlot`]: super::super::trb::command::CommandTrb::DisableSlot
-    ///
-    /// [4.5.3.5]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A108%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C632%2C0%5D
-    Addressed,
+        #[value(2)]
+        /// The USB device is in the `Address` state, the pointer to the _Device Slot’s_
+        /// Output [`OwnedDeviceContext`] in the [`DeviceContextBaseAddressArray`] is valid,
+        /// the [`SlotContext`] and [`EndpointContext`] 0 in the Output Device Context have
+        /// been initialized by the xHC, and the Doorbell register for the slot is enabled only
+        /// for `DB Target = Control EP 0 Enqueue Pointer Update`.
+        ///
+        /// The only commands that software is allowed to issue for the slot in this state are the [`EvaluateContext`],
+        /// [`ConfigureEndpoint`], [`ResetEndpoint`], [`StopEndpoint`], [`NegotiateBandwidth`],
+        /// [`SetTRDequeuePointer`], [`ResetDevice`], and [`DisableSlot`].
+        ///
+        /// See the spec section [4.5.3.5] for more info.
+        ///
+        /// [`OwnedDeviceContext`]: super::device_context::OwnedDeviceContext
+        /// [`DeviceContextBaseAddressArray`]: super::super::dcbaa::DeviceContextBaseAddressArray
+        /// [`EndpointContext`]: super::endpoint_context::EndpointContext
+        ///
+        /// [`EvaluateContext`]: super::super::trb::command::CommandTrb::EvaluateContext
+        /// [`ConfigureEndpoint`]: super::super::trb::command::CommandTrb::ConfigureEndpoint
+        /// [`ResetEndpoint`]: super::super::trb::command::CommandTrb::ResetEndpoint
+        /// [`StopEndpoint`]: super::super::trb::command::CommandTrb::StopEndpoint
+        /// [`NegotiateBandwidth`]: super::super::trb::command::CommandTrb::NegotiateBandwidth
+        /// [`SetTRDequeuePointer`]: super::super::trb::command::CommandTrb::SetTRDequeuePointer
+        /// [`ResetDevice`]: super::super::trb::command::CommandTrb::ResetDevice
+        /// [`DisableSlot`]: super::super::trb::command::CommandTrb::DisableSlot
+        ///
+        /// [4.5.3.5]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A108%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C632%2C0%5D
+        Addressed,
 
-    /// the USB device is in the `Configured` state, the pointer to the
-    /// _Device Slot’s_ Output [`OwnedDeviceContext`] in the [`DeviceContextBaseAddressArray`] is
-    /// valid, the [`SlotContext`], [`EndpointContext`] 0, and enabled IN and OUT [`EndpointContext`]s
-    /// between 1 and 15 in the Output Device Context have been initialized
-    /// by the xHC, and the _Device Context doorbell_ for the slot is enabled for
-    /// `DB Target = Control EP 0 Enqueue Pointer Update` and any enabled endpoint.
-    ///
-    /// The only commands that software is allowed to issue for the slot in this state are the
-    /// [`ConfigureEndpoint`] (DC = ‘0’ or ‘1’), [`ResetEndpoint`], [`StopEndpoint`],
-    /// [`SetTRDequeuePointer`], [`EvaluateContext`], [`ResetDevice`], [`NegotiateBandwidth`], and
-    /// [`DisableSlot`].
-    ///
-    /// See the spec section [4.5.3.6] for more info.
-    ///
-    /// [`OwnedDeviceContext`]: super::device_context::OwnedDeviceContext
-    /// [`DeviceContextBaseAddressArray`]: super::super::registers::dcbaa::DeviceContextBaseAddressArray
-    /// [`EndpointContext`]: super::endpoint_context::EndpointContext
-    ///
-    /// [`ResetEndpoint`]: super::super::trb::command::CommandTrb::ResetEndpoint
-    /// [`StopEndpoint`]: super::super::trb::command::CommandTrb::StopEndpoint
-    /// [`ConfigureEndpoint`]: super::super::trb::command::CommandTrb::ConfigureEndpoint
-    /// [`SetTRDequeuePointer`]: super::super::trb::command::CommandTrb::SetTRDequeuePointer
-    /// [`EvaluateContext`]: super::super::trb::command::CommandTrb::EvaluateContext
-    /// [`ResetDevice`]: super::super::trb::command::CommandTrb::ResetDevice
-    /// [`NegotiateBandwidth`]: super::super::trb::command::CommandTrb::NegotiateBandwidth
-    /// [`DisableSlot`]: super::super::trb::command::CommandTrb::DisableSlot
-    ///
-    /// [4.5.3.6]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A108%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C184%2C0%5D
-    Configured,
+        #[value(3)]
+        /// the USB device is in the `Configured` state, the pointer to the
+        /// _Device Slot’s_ Output [`OwnedDeviceContext`] in the [`DeviceContextBaseAddressArray`] is
+        /// valid, the [`SlotContext`], [`EndpointContext`] 0, and enabled IN and OUT [`EndpointContext`]s
+        /// between 1 and 15 in the Output Device Context have been initialized
+        /// by the xHC, and the _Device Context doorbell_ for the slot is enabled for
+        /// `DB Target = Control EP 0 Enqueue Pointer Update` and any enabled endpoint.
+        ///
+        /// The only commands that software is allowed to issue for the slot in this state are the
+        /// [`ConfigureEndpoint`] (DC = ‘0’ or ‘1’), [`ResetEndpoint`], [`StopEndpoint`],
+        /// [`SetTRDequeuePointer`], [`EvaluateContext`], [`ResetDevice`], [`NegotiateBandwidth`], and
+        /// [`DisableSlot`].
+        ///
+        /// See the spec section [4.5.3.6] for more info.
+        ///
+        /// [`OwnedDeviceContext`]: super::device_context::OwnedDeviceContext
+        /// [`DeviceContextBaseAddressArray`]: super::super::dcbaa::DeviceContextBaseAddressArray
+        /// [`EndpointContext`]: super::endpoint_context::EndpointContext
+        ///
+        /// [`ResetEndpoint`]: super::super::trb::command::CommandTrb::ResetEndpoint
+        /// [`StopEndpoint`]: super::super::trb::command::CommandTrb::StopEndpoint
+        /// [`ConfigureEndpoint`]: super::super::trb::command::CommandTrb::ConfigureEndpoint
+        /// [`SetTRDequeuePointer`]: super::super::trb::command::CommandTrb::SetTRDequeuePointer
+        /// [`EvaluateContext`]: super::super::trb::command::CommandTrb::EvaluateContext
+        /// [`ResetDevice`]: super::super::trb::command::CommandTrb::ResetDevice
+        /// [`NegotiateBandwidth`]: super::super::trb::command::CommandTrb::NegotiateBandwidth
+        /// [`DisableSlot`]: super::super::trb::command::CommandTrb::DisableSlot
+        ///
+        /// [4.5.3.6]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A108%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C184%2C0%5D
+        Configured,
 
-    /// Reserved
-    Reserved(u8),
-}
-
-impl SlotState {
-    /// Constructs a [`SlotState`] from its bit representation
-    const fn from_bits(bits: u32) -> Self {
-        #[allow(clippy::cast_possible_truncation)]
-        let bits = bits as u8;
-
-        match bits {
-            0 => Self::Enabled,
-            1 => Self::Default,
-            2 => Self::Addressed,
-            3 => Self::Configured,
-            _ => Self::Reserved(bits),
-        }
+        #[rest]
+        /// Reserved
+        Reserved(u8),
     }
-
-    /// Converts a [`SlotState`] into its bit representation
-    const fn into_bits(self) -> u32 {
-        match self {
-            Self::Enabled => 0,
-            Self::Default => 1,
-            Self::Addressed => 2,
-            Self::Configured => 3,
-            Self::Reserved(bits) => bits as u32,
-        }
-    }
-}
+);
 
 /// Defines information relating to a device as a whole.
-/// 
+///
 /// Defined in the spec section [6.2.2]
-/// 
+///
 /// [6.2.2]: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/extensible-host-controler-interface-usb-xhci.pdf#%5B%7B%22num%22%3A451%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C138%2C668%2C0%5D
 #[repr(C)]
 #[derive(Clone, Copy)]

@@ -11,6 +11,7 @@ use crate::{pci::devices::PciFunction, KERNEL_STATE};
 
 use alloc::boxed::Box;
 use log::error;
+use registers::capability::extended::{Capability, ExtendedCapabilityRegisters};
 use tasks::TaskQueue;
 use x86_64::PhysAddr;
 
@@ -38,6 +39,8 @@ pub struct XhciController {
     function: PciFunction,
     /// The controller's capability registers
     capability_registers: CapabilityRegisters,
+    /// The controller's extended capability registers, if supported
+    extended_capability_registers: Option<ExtendedCapabilityRegisters>,
     /// The controller's operational registers
     operational_registers: OperationalRegisters,
     /// The controller's runtime registers
@@ -121,6 +124,13 @@ impl XhciController {
         }
 
         Some(trb)
+    }
+
+    /// Gets an iterator over the controller's extended capabilities, if supported.
+    /// 
+    // TODO: should this just return an empty iterator if extended capabilities are not supported?
+    fn extended_capabilities(&self) -> Option<impl Iterator<Item = Capability> + '_> {
+        Some(self.extended_capability_registers.as_ref()?.capabilities())
     }
 }
 

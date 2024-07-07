@@ -4,57 +4,40 @@ use core::fmt::Debug;
 
 use x86_64::PhysAddr;
 
+use crate::util::bitfield_enum::bitfield_enum;
+
 use super::super::update_methods;
 
-/// The current operational state of the endpoint
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EndpointState {
-    /// The endpoint is not operational
-    Disabled,
-    /// The endpoint is operational, either waiting for a doorbell ring or processing TDs.
-    Running,
-    /// The endpoint is halted due to a Halt condition detected on the USB. SW shall issue
-    /// a [Reset Endpoint Command] to recover from the Halt condition and transition to the Stopped
-    /// state. SW may manipulate the Transfer Ring while in this state.
-    ///
-    /// [Reset Endpoint Command]: super::super::trb::command::CommandTrb::ResetEndpoint
-    Halted,
-    /// The endpoint is not running due to a Stop Endpoint Command or recovering
-    /// from a Halt condition. SW may manipulate the Transfer Ring while in this state.
-    Stopped,
-    /// The endpoint is not running due to a TRB Error. SW may manipulate the Transfer Ring while in this state.
-    Error,
-    /// Reserved
-    Reserved(u8),
-}
-
-impl EndpointState {
-    /// Constructs an [`EndpointState`] from its bit representation
-    const fn from_bits(bits: u32) -> Self {
-        #[allow(clippy::cast_possible_truncation)]
-        match bits {
-            0 => Self::Disabled,
-            1 => Self::Running,
-            2 => Self::Halted,
-            3 => Self::Stopped,
-            4 => Self::Error,
-            5..=7 => Self::Reserved(bits as _),
-            _ => unreachable!(),
-        }
+bitfield_enum!(
+    #[bitfield_enum(u32)]
+    /// The current operational state of the endpoint
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum EndpointState {
+        #[value(0)]
+        /// The endpoint is not operational
+        Disabled,
+        #[value(1)]
+        /// The endpoint is operational, either waiting for a doorbell ring or processing TDs.
+        Running,
+        #[value(2)]
+        /// The endpoint is halted due to a Halt condition detected on the USB. SW shall issue
+        /// a [Reset Endpoint Command] to recover from the Halt condition and transition to the Stopped
+        /// state. SW may manipulate the Transfer Ring while in this state.
+        ///
+        /// [Reset Endpoint Command]: super::super::trb::command::CommandTrb::ResetEndpoint
+        Halted,
+        #[value(3)]
+        /// The endpoint is not running due to a Stop Endpoint Command or recovering
+        /// from a Halt condition. SW may manipulate the Transfer Ring while in this state.
+        Stopped,
+        #[value(4)]
+        /// The endpoint is not running due to a TRB Error. SW may manipulate the Transfer Ring while in this state.
+        Error,
+        #[rest]
+        /// Reserved
+        Reserved(u8),
     }
-
-    /// Converts an [`EndpointState`] into its bit representation
-    const fn into_bits(self) -> u32 {
-        match self {
-            EndpointState::Disabled => 0,
-            EndpointState::Running => 1,
-            EndpointState::Halted => 2,
-            EndpointState::Stopped => 3,
-            EndpointState::Error => 4,
-            EndpointState::Reserved(bits) => bits as _,
-        }
-    }
-}
+);
 
 #[bitfield(u32)]
 struct EndpointContextDword0 {
@@ -195,51 +178,30 @@ struct EndpointContextDword4 {
     max_endpoint_service_time_interval_payload_low: u16,
 }
 
-/// A type of USB endpoint
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(clippy::missing_docs_in_private_items)]
-pub enum EndpointType {
-    NotValid,
-    IsochOut,
-    BulkOut,
-    InterruptOut,
-    Control,
-    IsochIn,
-    BulkIn,
-    InterruptIn,
-}
-
-impl EndpointType {
-    /// Constructs the [`EndpointType`] from its bit representation
-    const fn from_bits(bits: u32) -> Self {
-        match bits {
-            0 => Self::NotValid,
-            1 => Self::IsochOut,
-            2 => Self::BulkOut,
-            3 => Self::InterruptOut,
-            4 => Self::Control,
-            5 => Self::IsochIn,
-            6 => Self::BulkIn,
-            7 => Self::InterruptIn,
-
-            _ => unreachable!(),
-        }
+bitfield_enum!(
+    #[bitfield_enum(u32)]
+    /// A type of USB endpoint
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[allow(clippy::missing_docs_in_private_items)]
+    pub enum EndpointType {
+        #[value(0)]
+        NotValid,
+        #[value(1)]
+        IsochOut,
+        #[value(2)]
+        BulkOut,
+        #[value(3)]
+        InterruptOut,
+        #[value(4)]
+        Control,
+        #[value(5)]
+        IsochIn,
+        #[value(6)]
+        BulkIn,
+        #[value(7)]
+        InterruptIn,
     }
-
-    /// Converts the [`EndpointType`] into its bit representation
-    const fn into_bits(self) -> u32 {
-        match self {
-            Self::NotValid => 0,
-            Self::IsochOut => 1,
-            Self::BulkOut => 2,
-            Self::InterruptOut => 3,
-            Self::Control => 4,
-            Self::IsochIn => 5,
-            Self::BulkIn => 6,
-            Self::InterruptIn => 7,
-        }
-    }
-}
+);
 
 /// The _Endpoint Context_ data structure, which defines information that applies to a specific endpoint.
 ///
@@ -401,7 +363,7 @@ impl EndpointContext {
         if large_esit_payload {
             todo!("Setting mult with large ESIT payload");
         }
-        
+
         let mult: u8 = mult.try_into().unwrap();
         assert!(mult <= 2);
 

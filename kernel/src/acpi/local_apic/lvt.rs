@@ -1,91 +1,61 @@
 //! The [`LvtRegisters`] struct for parsing the _Local Vector Table_ registers
 
-use crate::acpi::{InterruptActiveState, InterruptTriggerMode};
+use crate::{
+    acpi::{InterruptActiveState, InterruptTriggerMode},
+    util::bitfield_enum::bitfield_enum,
+};
 
-/// The delivery mode for an interrupt in the local vector table
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LvtDeliveryMode {
-    /// The interrupt is delivered as normal to the specified field
-    Fixed,
-    /// The interrupt is delivered as a system management interrupt
-    SystemManagement,
-    /// The interrupt is delivered as a non-maskable interrupt.
-    /// When using this delivery mode, the vector field should be set to 00H for future compatibility
-    NonMaskable,
-    /// Causes the processor to respond to the interrupt as if the interrupt originated
-    /// in an externally connected (8259A-compatible) interrupt controller.
-    /// A special INTA bus cycle corresponding to ExtINT, is routed to the external
-    /// controller. The external controller is expected to supply the vector information.
-    /// The APIC architecture supports only one ExtINT source in a system,
-    /// usually contained in the compatibility bridge. Only one processor in the
-    /// system should have an LVT entry configured to use the ExtINT delivery
-    /// mode. Not supported for the LVT CMCI register, the LVT thermal monitor
-    /// register, or the LVT performance counter register.
-    External,
-    /// Delivers an INIT request to the processor core, which causes the processor
-    /// to perform an INIT. When using this delivery mode, the vector field should
-    /// be set to 00H for future compatibility. Not supported for the LVT CMCI register,
-    /// the LVT thermal monitor register, or the LVT performance counter register.
-    Init,
-}
-
-impl LvtDeliveryMode {
-    /// Parses the delivery mode from its bit representation
-    const fn from_bits(bits: u32) -> Self {
-        match bits {
-            0 => Self::Fixed,
-            2 => Self::SystemManagement,
-            4 => Self::NonMaskable,
-            7 => Self::External,
-            5 => Self::Init,
-
-            _ => panic!("Unknown or reserved LVT delivery mode"),
-        }
+bitfield_enum!(
+    #[bitfield_enum(u32)]
+    /// The delivery mode for an interrupt in the local vector table
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum LvtDeliveryMode {
+        #[value(0)]
+        /// The interrupt is delivered as normal to the specified field
+        Fixed,
+        #[value(2)]
+        /// The interrupt is delivered as a system management interrupt
+        SystemManagement,
+        #[value(4)]
+        /// The interrupt is delivered as a non-maskable interrupt.
+        /// When using this delivery mode, the vector field should be set to 00H for future compatibility
+        NonMaskable,
+        #[value(7)]
+        /// Causes the processor to respond to the interrupt as if the interrupt originated
+        /// in an externally connected (8259A-compatible) interrupt controller.
+        /// A special INTA bus cycle corresponding to ExtINT, is routed to the external
+        /// controller. The external controller is expected to supply the vector information.
+        /// The APIC architecture supports only one ExtINT source in a system,
+        /// usually contained in the compatibility bridge. Only one processor in the
+        /// system should have an LVT entry configured to use the ExtINT delivery
+        /// mode. Not supported for the LVT CMCI register, the LVT thermal monitor
+        /// register, or the LVT performance counter register.
+        External,
+        #[value(5)]
+        /// Delivers an INIT request to the processor core, which causes the processor
+        /// to perform an INIT. When using this delivery mode, the vector field should
+        /// be set to 00H for future compatibility. Not supported for the LVT CMCI register,
+        /// the LVT thermal monitor register, or the LVT performance counter register.
+        Init,
     }
+);
 
-    /// Converts the delivery mode into its bit representation
-    const fn into_bits(self) -> u32 {
-        match self {
-            Self::Fixed => 0,
-            Self::SystemManagement => 2,
-            Self::NonMaskable => 4,
-            Self::External => 7,
-            Self::Init => 5,
-        }
+bitfield_enum!(
+    #[bitfield_enum(u32)]
+    /// The mode of the local APIC timer
+    #[derive(Debug)]
+    pub enum TimerMode {
+        #[value(0)]
+        /// The timer counts down once and then stops
+        OneShot,
+        #[value(1)]
+        /// The timer counts down and then starts again
+        Periodic,
+        #[value(2)]
+        /// Only available if CPUID.01H:ECX.TSC_Deadline[bit 24] = 1
+        Deadline,
     }
-}
-
-/// The mode of the local APIC timer
-#[derive(Debug)]
-pub enum TimerMode {
-    /// The timer counts down once and then stops
-    OneShot,
-    /// The timer counts down and then starts again
-    Periodic,
-    /// Only available if CPUID.01H:ECX.TSC_Deadline[bit 24] = 1
-    Deadline,
-}
-
-impl TimerMode {
-    /// Constructs a [`TimerMode`] from its bit representation
-    const fn from_bits(bits: u32) -> Self {
-        match bits {
-            0 => Self::OneShot,
-            1 => Self::Periodic,
-            2 => Self::Deadline,
-            _ => panic!("Unknown timer mode"),
-        }
-    }
-
-    /// Converts a [`TimerMode`] into its bit representation
-    const fn into_bits(self) -> u32 {
-        match self {
-            TimerMode::OneShot => 0,
-            TimerMode::Periodic => 1,
-            TimerMode::Deadline => 2,
-        }
-    }
-}
+);
 
 /// The format of the register controlling an interrupt in the _Local Vector Table_ (LVT).
 /// These are interrupts which occur within a core.

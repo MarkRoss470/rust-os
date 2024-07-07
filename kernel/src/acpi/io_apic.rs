@@ -6,7 +6,7 @@ use x86_64::{
     PhysAddr, VirtAddr,
 };
 
-use crate::global_state::KERNEL_STATE;
+use crate::{global_state::KERNEL_STATE, util::bitfield_enum::bitfield_enum};
 
 use super::{InterruptActiveState, InterruptTriggerMode};
 
@@ -47,117 +47,71 @@ struct IoApicArbitration {
     reserved: u8,
 }
 
-/// A priority of delivering an interrupt to a local APIC.
-///
-/// For more information see the I/O APIC datasheet section [3.2.4].
-///
-/// [3.2.4]: https://web.archive.org/web/20161130153145if_/http://download.intel.com:80/design/chipsets/datashts/29056601.pdf#%5B%7B%22num%22%3A36%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C-12%2C797%2C0%5D
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum InterruptDeliveryMode {
-    /// Send the interrupt to all processor cores listed in the destination.
-    Fixed,
-    /// Send the interrupt to the core running at the lowest priority
-    LowestPriority,
-    /// System Management Interrupt.
-    /// If this is selected, the [`vector`][RedirectionEntry::vector] is ignoredbut must be set to all 0s.
-    /// The interrupt must be [`EdgeTriggered`][InterruptTriggerMode::EdgeTriggered].
-    Smi,
-    /// Non maskable interrupt - send the interrupt to the NMI signal of all processor cores listed in the destination.
-    /// The interrupt is always treated as [`EdgeTriggered`][InterruptTriggerMode::EdgeTriggered].
-    Nmi,
-    /// Send the interrupt to all processor cores listed in the destination by asserting the `INIT` signal.
-    /// The interrupt is always treated as [`EdgeTriggered`][InterruptTriggerMode::EdgeTriggered].
-    Init,
-    /// Send the interrupt to all processor cores listed in the destination,
-    /// through an externally connected interrupt controller.
-    ExtInt,
-}
-
-impl InterruptDeliveryMode {
-    /// Constructs an [`InterruptDeliveryMode`] from its bit representation
-    const fn from_bits(bits: u64) -> Self {
-        match bits {
-            0 => Self::Fixed,
-            1 => Self::LowestPriority,
-            2 => Self::Smi,
-            4 => Self::Nmi,
-            5 => Self::Init,
-            7 => Self::ExtInt,
-            _ => panic!("Invalid InterruptDeliveryMode"),
-        }
+bitfield_enum!(
+    #[bitfield_enum(u64)]
+    /// A priority of delivering an interrupt to a local APIC.
+    ///
+    /// For more information see the I/O APIC datasheet section [3.2.4].
+    ///
+    /// [3.2.4]: https://web.archive.org/web/20161130153145if_/http://download.intel.com:80/design/chipsets/datashts/29056601.pdf#%5B%7B%22num%22%3A36%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2C-12%2C797%2C0%5D
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum InterruptDeliveryMode {
+        #[value(0)]
+        /// Send the interrupt to all processor cores listed in the destination.
+        Fixed,
+        #[value(1)]
+        /// Send the interrupt to the core running at the lowest priority
+        LowestPriority,
+        #[value(2)]
+        /// System Management Interrupt.
+        /// If this is selected, the [`vector`][RedirectionEntry::vector] is ignoredbut must be set to all 0s.
+        /// The interrupt must be [`EdgeTriggered`][InterruptTriggerMode::EdgeTriggered].
+        Smi,
+        #[value(4)]
+        /// Non maskable interrupt - send the interrupt to the NMI signal of all processor cores listed in the destination.
+        /// The interrupt is always treated as [`EdgeTriggered`][InterruptTriggerMode::EdgeTriggered].
+        Nmi,
+        #[value(5)]
+        /// Send the interrupt to all processor cores listed in the destination by asserting the `INIT` signal.
+        /// The interrupt is always treated as [`EdgeTriggered`][InterruptTriggerMode::EdgeTriggered].
+        Init,
+        #[value(7)]
+        /// Send the interrupt to all processor cores listed in the destination,
+        /// through an externally connected interrupt controller.
+        ExtInt,
     }
+);
 
-    /// Converts an [`InterruptDeliveryMode`] into its bit representation.
-    const fn into_bits(self) -> u64 {
-        match self {
-            Self::Fixed => 0,
-            Self::LowestPriority => 1,
-            Self::Smi => 2,
-            Self::Nmi => 4,
-            Self::Init => 5,
-            Self::ExtInt => 7,
-        }
+bitfield_enum!(
+    #[bitfield_enum(u64)]
+    /// Whether the local APIC is addressed physically by ID or logically
+    /// by checking the Destination Format Register and Logical Destination Register in each Local APIC.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum InterruptDestinationMode {
+        #[value(0)]
+        /// The interrupt is sent to the local APIC with the ID stored in the lower 4 bits of
+        /// [`destination`][RedirectionEntry::destination]
+        Physical,
+        #[value(1)]
+        /// The interrupt is sent to the local APIC(s) whose _Destination Format Register_ and
+        /// _Logical Destination Register_ match [`destination`][RedirectionEntry::destination]
+        Logical,
     }
-}
+);
 
-/// Whether the local APIC is addressed physically by ID or logically
-/// by checking the Destination Format Register and Logical Destination Register in each Local APIC.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum InterruptDestinationMode {
-    /// The interrupt is sent to the local APIC with the ID stored in the lower 4 bits of
-    /// [`destination`][RedirectionEntry::destination]
-    Physical,
-    /// The interrupt is sent to the local APIC(s) whose _Destination Format Register_ and
-    /// _Logical Destination Register_ match [`destination`][RedirectionEntry::destination]
-    Logical,
-}
-
-impl InterruptDestinationMode {
-    /// Constructs an [`InterruptDestinationMode`] from its bit representation
-    const fn from_bits(bits: u64) -> Self {
-        match bits {
-            0 => Self::Physical,
-            1 => Self::Logical,
-            _ => unreachable!(),
-        }
+bitfield_enum!(
+    #[bitfield_enum(u64)]
+    /// The state of a local APIC's response to a level-trigged interrupt
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum LevelTriggeredInterruptState {
+        #[value(0)]
+        /// The local APIC(s) have sent an EOI
+        EoiSent,
+        #[value(1)]
+        /// The local APIC(s) have accepted the interrupt
+        Accepted,
     }
-
-    /// Converts an [`InterruptDestinationMode`] into its bit representation
-    const fn into_bits(self) -> u64 {
-        match self {
-            Self::Physical => 0,
-            Self::Logical => 1,
-        }
-    }
-}
-
-/// The state of a local APIC's response to a level-trigged interrupt
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LevelTriggeredInterruptState {
-    /// The local APIC(s) have sent an EOI
-    EoiSent,
-    /// The local APIC(s) have accepted the interrupt
-    Accepted,
-}
-
-impl LevelTriggeredInterruptState {
-    /// Constructs an [`LevelTriggeredInterruptState`] from its bit representation
-    const fn from_bits(bits: u64) -> Self {
-        match bits {
-            0 => Self::EoiSent,
-            1 => Self::Accepted,
-            _ => unreachable!(),
-        }
-    }
-
-    /// Converts an [`LevelTriggeredInterruptState`] into its bit representation
-    const fn into_bits(self) -> u64 {
-        match self {
-            Self::EoiSent => 0,
-            Self::Accepted => 1,
-        }
-    }
-}
+);
 
 #[bitfield(u64)]
 struct RedirectionEntry {

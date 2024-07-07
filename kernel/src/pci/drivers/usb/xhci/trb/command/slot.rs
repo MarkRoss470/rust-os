@@ -1,39 +1,23 @@
 //! The [`EnableSlotTrb`] and [`DisableSlotTrb`] types
 
-use crate::pci::drivers::usb::xhci::trb::TrbType;
+use crate::{pci::drivers::usb::xhci::trb::TrbType, util::bitfield_enum::bitfield_enum};
 
-/// A type of slot (TODO: link)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SlotType {
-    /// A regular USB port
-    Usb2Or3,
-    /// Any other slot type
-    Other(u8),
-}
-
-impl SlotType {
-    /// Constructs a [`SlotType`] from its bit representation
-    const fn from_bits(bits: u32) -> Self {
-        #[allow(clippy::cast_possible_truncation)]
-        let bits = bits as u8;
-
-        match bits {
-            0 => Self::Usb2Or3,
-            _ => Self::Other(bits),
-        }
+bitfield_enum!(
+    #[bitfield_enum(u32)]
+    /// A type of slot (TODO: link)
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum SlotType {
+        #[value(0)]
+        /// A regular USB port
+        Usb2Or3,
+        #[rest]
+        /// Any other slot type
+        Other(u8),
     }
-
-    /// Converts a [`SlotType`] into its bit representation
-    const fn into_bits(self) -> u32 {
-        match self {
-            SlotType::Usb2Or3 => 0,
-            SlotType::Other(o) => o as u32,
-        }
-    }
-}
+);
 
 /// The _Enable Slot Command_, which causes the controller to select an available Device Slot and return the ID of the selected
-/// slot to the host in a [`CommandCompletionTrb`]. 
+/// slot to the host in a [`CommandCompletionTrb`].
 ///
 /// [`CommandCompletionTrb`]: super::super::event::command_completion::CommandCompletionTrb
 #[bitfield(u32)]
