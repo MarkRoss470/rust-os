@@ -57,3 +57,9 @@ features = ["alloc"]
 [dependencies.conquer-once]
 version = "0.4"
 default-features = false
+
+# The bootloader crate has a bug where it fails to create images if the 
+# kernel is too large. This patches the dependency to a git submodule which
+# has a fix for the bug.
+[patch.crates-io]
+bootloader_api = { path = "../bootloader/api" }

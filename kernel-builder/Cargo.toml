@@ -7,5 +7,13 @@ edition = "2021"
 
 [dependencies]
 bootloader = "0.11"
+bootloader-boot-config = "0.11"
 clap = {version="4.0", features=["derive"]}
 rayon = "1.8"
+
+# The bootloader crate has a bug where it fails to create images if the 
+# kernel is too large. This patches the dependency to a git submodule which
+# has a fix for the bug.
+[patch.crates-io]
+bootloader = { path = "../bootloader" }
+bootloader-boot-config = { path = "../bootloader/common/config" }   

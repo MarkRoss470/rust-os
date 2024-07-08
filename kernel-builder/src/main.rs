@@ -216,7 +216,7 @@ fn main() -> ExitCode {
 
     let config = {
         let mut config = BootConfig::default();
-        config.log_level = bootloader_boot_config::LevelFilter::Warn;
+        config.serial_logging = false;
         config
     };
 
