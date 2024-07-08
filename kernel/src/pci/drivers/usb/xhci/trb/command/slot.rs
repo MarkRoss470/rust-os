@@ -1,20 +1,6 @@
 //! The [`EnableSlotTrb`] and [`DisableSlotTrb`] types
 
-use crate::{pci::drivers::usb::xhci::trb::TrbType, util::bitfield_enum::bitfield_enum};
-
-bitfield_enum!(
-    #[bitfield_enum(u32)]
-    /// A type of slot (TODO: link)
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum SlotType {
-        #[value(0)]
-        /// A regular USB port
-        Usb2Or3,
-        #[rest]
-        /// Any other slot type
-        Other(u8),
-    }
-);
+use super::super::TrbType;
 
 /// The _Enable Slot Command_, which causes the controller to select an available Device Slot and return the ID of the selected
 /// slot to the host in a [`CommandCompletionTrb`].
@@ -30,8 +16,12 @@ pub struct EnableSlotTrb {
     #[bits(6, default = TrbType::EnableSlotCommand)]
     pub trb_type: TrbType,
 
+    /// The type of protocol to use for the slot.
+    /// This value can be found in the controller's [`extended_capability_registers`].
+    /// 
+    /// [`extended_capability_registers`]: super::super::super::XhciController::extended_capability_registers
     #[bits(5)]
-    pub slot_type: SlotType,
+    pub slot_type: u8,
 
     #[bits(11)]
     _reserved: (),

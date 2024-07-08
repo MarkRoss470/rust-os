@@ -144,8 +144,9 @@ pub struct StatusAndControl {
     pub port_power: bool,
 
     /// The speed of the connected device, if one is connected.
-    ///
-    /// TODO: parse these properly using _Supported Protocol_ data structure (spec section 7.2.1)
+    /// This value can be interpreted using the controller's [`extended_capability_registers`]
+    /// 
+    /// [`extended_capability_registers`]: super::super::capability::extended::ExtendedCapabilityRegisters
     #[bits(4)]
     pub port_speed: u8,
 

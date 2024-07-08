@@ -1,5 +1,8 @@
 //! Contains the [`CapabilityRegisters`] struct and the types it depends on
 
+pub mod extended;
+mod supported_protocol;
+
 use core::{fmt::Debug, ptr::addr_of};
 
 use alloc::string::String;
@@ -134,7 +137,7 @@ impl ContextSize {
         match bits {
             0 => Self::Small,
             1 => Self::Large,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -468,9 +471,7 @@ impl CapabilityParameters2 {
 #[derive(Clone, Copy)]
 struct CapabilityRegistersFields {
     /// The length of the capability registers.
-    /// The [`OperationalRegisters`] start this number of bytes after the capability registers.
-    /// 
-    /// [`OperationalRegisters`]: super::operational::OperationalRegisters
+    /// The [`OperationalRegisters`][super::operational_registers::OperationalRegisters] start this number of bytes after the capability registers.
     capability_register_length: u8,
 
     #[doc(hidden)]

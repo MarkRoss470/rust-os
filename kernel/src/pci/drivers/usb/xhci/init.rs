@@ -7,6 +7,7 @@ use crate::{
     pci::{
         bar::Bar,
         classcodes::{ClassCode, SerialBusControllerType, USBControllerType},
+        drivers::usb::xhci::registers::capability::extended::ExtendedCapabilityRegisters,
         registers::{HeaderType, PciGeneralDeviceHeader},
         PciMappedFunction,
     },
@@ -44,6 +45,7 @@ impl XhciController {
             mut operational_registers,
             mut runtime_registers,
             doorbell_registers,
+            extended_capability_registers,
         ) = unsafe { init_mmio(&function) };
 
         // SAFETY: The controller hasn't been set up yet so nothing is relying on the state being preserved
@@ -91,6 +93,7 @@ impl XhciController {
         let mut controller = Self {
             function: function.function,
             capability_registers,
+            extended_capability_registers,
             operational_registers,
             runtime_registers,
             dcbaa,
@@ -136,9 +139,10 @@ impl XhciController {
         controller.test_command_ring().await;
 
         for mut port in controller.operational_registers.ports_mut() {
-            port.write_status_and_control(
-                port.read_status_and_control().normalised().with_reset(true),
-            );
+            // SAFETY: This resets the port, which has no effect on memory safety
+            unsafe {
+                port.write_status_and_control(port.read_status_and_control().with_reset(true));
+            }
         }
 
         controller.main_loop().await;
@@ -217,6 +221,7 @@ unsafe fn init_mmio(
     OperationalRegisters,
     RuntimeRegisters,
     DoorbellRegisters,
+    Option<ExtendedCapabilityRegisters>,
 ) {
     let general_device_header = parse_header(function);
 
@@ -229,11 +234,26 @@ unsafe fn init_mmio(
     let (capability_registers, operational_registers, runtime_registers, doorbell_registers) =
         unsafe { find_registers(mapped_mmio) };
 
+    let extended_capability_registers = match capability_registers
+        .capability_parameters_1()
+        .extended_capabilities_pointer()
+    {
+        0 => None,
+        // SAFETY: This pointer is valid for the whole lifetime of the controller
+        // The offset is in 32-bit units, so multiply it by 4 to get the proper byte offset.
+        offset => unsafe {
+            Some(ExtendedCapabilityRegisters::new(
+                mapped_mmio.as_ptr::<u32>().byte_add(offset as usize * 4),
+            ))
+        },
+    };
+
     (
         capability_registers,
         operational_registers,
         runtime_registers,
         doorbell_registers,
+        extended_capability_registers,
     )
 }
 
