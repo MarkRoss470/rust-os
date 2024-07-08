@@ -296,7 +296,8 @@ unsafe fn map_mmio(
     let mapped_mmio = unsafe {
         KERNEL_STATE
             .physical_memory_accessor
-            .lock()
+            .try_lock()
+            .unwrap()
             .map_frames(mmio)
             .start
             .start_address()
