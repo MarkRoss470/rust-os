@@ -2,7 +2,7 @@
 
 use x86_64::PhysAddr;
 
-use super::TrbType;
+use super::super::TrbType;
 
 /// The main payload data of a [`NormalTrb`].
 ///

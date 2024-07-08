@@ -2,7 +2,6 @@
 
 use core::cmp::Ordering;
 
-use log::debug;
 use x86_64::PhysAddr;
 
 use crate::{
@@ -10,7 +9,7 @@ use crate::{
     pci::drivers::usb::xhci::trb::{command::CommandTrb, link::LinkTrb},
 };
 
-use super::{RingFullError, TransferTrb};
+use super::{transfer::TransferTrb, RingFullError};
 
 /// A type which is used for the implementation of [`CommandTrbRing`] and [`TransferTrbRing`]
 #[derive(Debug)]
@@ -230,7 +229,7 @@ impl CommandTrbRing {
     ///
     /// # Safety
     /// * The caller is responsible for the behaviour of the controller in response to this TRB.
-    /// 
+    ///
     /// [`XhciController::write_command_trb`]: super::super::XhciController::write_command_trb
     pub unsafe fn enqueue(&mut self, trb: CommandTrb) -> Result<PhysAddr, RingFullError> {
         // SAFETY: This is just a wrapper function, so the safety requirements are the same.
