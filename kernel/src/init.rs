@@ -59,7 +59,7 @@ pub unsafe fn init(boot_info: &'static mut BootInfo) {
     // println!("Initialised heap");
 
     init_graphics(boot_info.framebuffer.as_mut().unwrap());
-    // println!("Initialised graphics");
+    println!("Initialised graphics");
 
     let _ = flush();
 
