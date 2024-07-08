@@ -1,11 +1,10 @@
 //! The [`EventTrbRing`] type
 
-use log::debug;
 use x86_64::PhysAddr;
 
 use crate::allocator::PageBox;
 
-use super::EventTrb;
+use super::{EventTrb, GenericTrbFlags};
 
 /// An _Event TRB Ring_
 ///
@@ -58,7 +57,8 @@ impl EventTrbRing {
         }
     }
 
-    /// Reads a TRB from the ring, if one is present. Also returns the
+    /// Reads a TRB from the ring, if one is present. Also returns the new dequeue address, 
+    /// which must be written to the event ring's dequeue register.
     ///
     /// # Safety
     /// This method does _not_ update the controller's dequeue pointer.
@@ -73,9 +73,10 @@ impl EventTrbRing {
                 .read_volatile()
         };
 
+        let current_dequeue = self.dequeue;
+        
         // Check whether the TRB has the cycle bit set matching `cycle_state`
-        // The cycle bit is the least significant bit in the last dword of the TRB.
-        if raw[3] & 1 == self.cycle_state as u32 {
+        if GenericTrbFlags::from(raw[3]).cycle() == self.cycle_state {
             self.dequeue += 1;
             if self.dequeue >= Self::SEGMENT_SIZE.into() {
                 self.dequeue = 0;
@@ -84,7 +85,7 @@ impl EventTrbRing {
 
             Some((
                 EventTrb::new(raw),
-                self.ring_start_addr() + (self.dequeue * 16),
+                self.ring_start_addr() + (current_dequeue * 16),
             ))
         } else {
             None
