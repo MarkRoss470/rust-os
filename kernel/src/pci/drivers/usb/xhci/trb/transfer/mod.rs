@@ -1,8 +1,9 @@
 //! The [`TransferTrb`] type
 
 use normal::NormalTrb;
+use x86_64::PhysAddr;
 
-use super::link::LinkTrb;
+use super::{link::LinkTrb, software_driven_rings::SoftwareDrivenTrbRing, RingFullError};
 
 pub mod normal;
 
@@ -57,5 +58,51 @@ impl TransferTrb {
             TransferTrb::EventData => todo!(),
             TransferTrb::NoOp => todo!(),
         }
+    }
+}
+
+/// The _Transfer TRB Ring_
+///
+/// This ring contains [`TransferTrb`]s for the controller to execute.
+#[derive(Debug)]
+pub struct TransferTrbRing(SoftwareDrivenTrbRing);
+
+impl TransferTrbRing {
+    /// The total length of the command ring including the link TRB
+    pub const TOTAL_LENGTH: usize = SoftwareDrivenTrbRing::TOTAL_LENGTH;
+
+    /// Allocates a new [`CommandTrbRing`]
+    pub fn new() -> Self {
+        Self(SoftwareDrivenTrbRing::new())
+    }
+
+    /// Gets the physical address of the start of the first segment of the ring
+    pub fn ring_start_addr(&self) -> PhysAddr {
+        self.0.ring_start_addr()
+    }
+
+    /// Writes a TRB to the buffer.
+    ///
+    /// This function does not ring the host controller doorbell, so the caller must do so to inform the controller to process the TRB.
+    ///
+    /// Returns the physical address of the queued TRB, to identify this TRB in future event TRBs.
+    ///
+    /// # Safety
+    /// * The caller is responsible for the behaviour of the controller in response to this TRB
+    pub unsafe fn enqueue(&mut self, trb: TransferTrb) -> Result<PhysAddr, RingFullError> {
+        // SAFETY: This is just a wrapper function, so the safety requirements are the same.
+        unsafe { self.0.enqueue(|cycle| trb.to_parts(cycle)) }
+    }
+
+    /// Updates the ring's dequeue pointer
+    ///
+    /// # Safety
+    /// * The passed address must have been read from the [`command_trb_pointer`] field of a [`CommandCompletion`] TRB.
+    ///
+    /// [`command_trb_pointer`]: super::event::command_completion::CommandCompletionTrb
+    /// [`CommandCompletion`]: super::EventTrb::CommandCompletion
+    pub unsafe fn update_dequeue(&mut self, dequeue: PhysAddr) {
+        // SAFETY: This is just a wrapper function, so the safety requirements are the same.
+        unsafe { self.0.update_dequeue(dequeue) }
     }
 }

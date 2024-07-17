@@ -12,10 +12,10 @@ mod link;
 mod software_driven_rings;
 pub mod transfer;
 
-pub use command::CommandTrb;
+pub use command::{CommandTrb, CommandTrbRing};
 pub use event::EventTrb;
 pub use event_ring::EventTrbRing;
-pub use software_driven_rings::{CommandTrbRing, TransferTrbRing};
+pub use transfer::TransferTrbRing;
 
 /// A type of TRB. Taken from [this table].
 ///
